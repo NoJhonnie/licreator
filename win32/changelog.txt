@@ -1,0 +1,11 @@
+0.8.501------------------------------------------------------
+:: Added support of import models created by SR 3DBuilder
+:: Fixed some major bugs when generate images with Pov-Ray
+:: Major improvements in error handling
+:: Support technique of DRag & DRop for open|import models 
+:: Upgrade user interface
+:: Create Assistant
+:: Fixed group of miscellaneous bugs
+:: Implemented information about estimated time of loading model
+:: Support of command line arguments
+:: Re-arrange __main__ executing 
