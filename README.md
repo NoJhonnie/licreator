@@ -6,9 +6,9 @@ LIC imports 3D models, organizes them into submodels, pages & steps, and exports
 
 Highlights:
 
-    A rich, WYSIWYG UI editor, which provides a fully interactive preview window along side a drag & drop-enabled navigation tree, to help organize and layout your book. 
+:: A rich, WYSIWYG UI editor, which provides a fully interactive preview window along side a drag & drop-enabled navigation tree, to help organize and layout your book. 
 
-    Automatically divide your model into steps. Add a list of parts needed for each step, and auto-layout multiple steps per page for a best fit. Auto-generate a title page and part list pages. 
+:: Automatically divide your model into steps. Add a list of parts needed for each step, and auto-layout multiple steps per page for a best fit. Auto-generate a title page and part list pages. 
 
 So far, LIC can import any LDraw model, but its dynamic importer makes it easy to add an importer for any 3D file type, and create instructions for that model. As Lego Digital Designer (LDD) too.
 
