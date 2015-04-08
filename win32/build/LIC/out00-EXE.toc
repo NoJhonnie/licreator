@@ -1,0 +1,9 @@
+('Z:\\W7_LeJOS\\workspace\\eclipse\\Lic\\src\\dist\\Lic.exe',
+ False,
+ False,
+ 'Z:\\W7_LeJOS\\workspace\\eclipse\\lic\\lic_0.9.002_src\\images\\lic_logo.ico',
+ None,
+ [],
+ None,
+ False,
+ 1425671139L)
