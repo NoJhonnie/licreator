@@ -20,34 +20,39 @@
 """
 
 #from __future__ import division
-import sys
-import time
+import logging
 import os
 import subprocess
-import logging
+import sys
+import thread
+import threading
+import time
 import urllib
 
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from PyQt4.QtOpenGL import *
 
-from LicModel import *
 from LicCustomPages import *
 from LicInstructions import *
+from LicModel import *
 
-from LicImporters import LDrawImporter
-from LicImporters import BuilderImporter
-
+import LicGLHelpers
 import LicGraphicsWidget
 import LicTreeModel
+import LicUndoActions
+import config
+import LicLayout
 import LicBinaryReader
 import LicBinaryWriter
-import config
-import LicDialogs
-import LicUndoActions
-import LicLayout
-import LicGLHelpers
-from LicAssistantWidget import LicShortcutAssistant 
+
+from LicAssistantWidget import LicShortcutAssistant,LicCleanupAssistant,LicWorker,\
+    LicDownloadAssistant
+from LicImporters import BuilderImporter
+from LicImporters import LDrawImporter
+from config import POVRayPath
+from LicHelpers import writeLogEntry
+
 
 def __recompileResources():
     # Handy personal function for rebuilding LicResources.py package (which contains the app's icons)
@@ -57,17 +62,16 @@ def __recompileResources():
     res_path = os.path.join(src_path ,"LicResources.py")
     subprocess.call("%s %s -o %s" % (pyrcc_path, qrc_path, res_path))
     print "Resource bundle created: %s" % res_path
-
 try:
     import LicResources  # Needed for ":/resource" type paths to work
 except ImportError:
     try:
-        print __recompileResources()
+        __recompileResources()
         import LicResources
     except:
         pass # Ignore missing Resource bundle silently - better to run without icons then to crash entirely
 
-__version__ = "0.8.501"
+__version__ = "1.0"
 _debug = False
 
 if _debug:
@@ -86,17 +90,22 @@ class LicTreeView(QTreeView):
 
     def __getEmptyText(self):
         return QString("Choose your model to build great manual. Because the world depends on it.")
+ 
+    def __getTopIndex(self):
+        return self.indexAt(self.rect().topLeft())   
     
     _padding = 20
+    
     emptytext = property(__getEmptyText)
+    topIndex  = property(__getTopIndex)
         
-    def walkTreeModel(self, cmp, action):
+    def walkTreeModel(self, comp, action):
         
         model = self.model()
         
         def traverse(index):
             
-            if index.isValid() and cmp(index):
+            if index.isValid() and comp(index):
                 action(index)
                  
             for row in range(model.rowCount(index)):
@@ -107,13 +116,12 @@ class LicTreeView(QTreeView):
         traverse(QModelIndex())
 
     def walkToNextChild(self):
-    # Jump to next|current top-level item at destination page
+        """ Jump to next|current top-level item at destination page """
         selected = self.selectionModel().currentIndex()
     # second level
         if selected.parent().data(Qt.WhatsThisRole).toPyObject():
             if selected.parent().data(Qt.WhatsThisRole).toPyObject().toLower().endsWith('page'):
                 selected = selected.sibling(selected.row() +1 ,selected.column())
-              
     # lower levels            
         chosen = selected
         if chosen.isValid():
@@ -127,11 +135,15 @@ class LicTreeView(QTreeView):
                   
             if chosen.isValid():
                 selected = chosen
-             
+    # if nothing is selected, get first on matching list
+        if not selected.isValid():
+                p = self.selectionModel().currentIndex()
+                selected = p.sibling(0 ,p.column())
+                 
         if selected.isValid():
             self.selectionModel().select(selected, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)
             self.selectionModel().setCurrentIndex(selected ,QItemSelectionModel.SelectCurrent)
-
+            
     def hideRowInstance(self, instanceType, hide):
         # instanceType can be either concrete type like PLI or itemClassString
         # like "Page Number" (for specific QGraphicsSimpleTextItems) 
@@ -253,10 +265,18 @@ class LicTreeView(QTreeView):
 
     def contextMenuEvent(self, event):
         # Pass right clicks on to the item right-clicked on
-        event.screenPos = event.globalPos   # 'Convert' QContextMenuEvent to QGraphicsSceneContextMenuEvent
-        item = self.indexAt(event.pos()).internalPointer()
-        if item:
-            return item.contextMenuEvent(event)
+        # Ignore multiple selection - contextMenu can handle only single item  
+        #FIXME: 'Convert' QContextMenuEvent to QGraphicsSceneContextMenuEvent
+        event.screenPos = event.globalPos   
+        item = self.indexAt(event.pos())
+        if item.internalPointer():
+            try:
+                if self.selectionModel().selectedIndexes() > 1:
+                    self.selectionModel().select(item,QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)
+                    self.pushTreeSelectionToScene()
+                return item.internalPointer().contextMenuEvent(event)
+            except:
+                return
         
     def wheelEvent(self, event):
         current = self.selectionModel().currentIndex()
@@ -275,6 +295,7 @@ class LicTreeView(QTreeView):
             self.selectionModel().select(nextindex, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)
             self.selectionModel().setCurrentIndex(nextindex ,QItemSelectionModel.SelectCurrent)
         
+        QTreeView.wheelEvent(self, event)
         # Let scene know about new selection
         self.pushTreeSelectionToScene()
 
@@ -289,7 +310,7 @@ class LicTreeWidget(QWidget):
         self.tree = LicTreeView(self)
         self.hiddenRowActions = []
         self.setMinimumWidth(250)
-        self.setMaximumWidth(250)
+        self.setMaximumWidth(400)
         
         self.treeToolBar = QToolBar("Tree Toolbar", self)
         self.treeToolBar.setIconSize(QSize(15, 15))
@@ -317,8 +338,8 @@ class LicTreeWidget(QWidget):
         addViewAction("Show Page | Step | Part", self.setShowPageStepPart, False)
         viewMenu.addSeparator()
         addViewAction("Group Parts by type", self.setShowCSIPartGroupings)
-#         TODO: Implement this feature. This must can switch between with group and without this group
-#         addViewAction("Group Pages by submodel", None)
+#TODO: Implement this feature. This must can switch between with group and without this group
+#addViewAction("Group Pages by submodel", None)
         viewMenu.addSeparator()
 
         self.hiddenRowActions.append(addViewAction("Show Page Number", lambda show: self.tree.hideRowInstance("Page Number", not show)))
@@ -388,10 +409,17 @@ class LicWindow(QMainWindow):
         QGL.setPreferredPaintEngine(QPaintEngine.OpenGL)
         
         self._loadTime = (0,0)
+        self._orginalsaved = False
+        self._orginalname  = ""
+        self._worker = None
         self.assistant = None
+        self.hRuler = None
+        self.vRuler = None
         
         self.loadSettings()
         self.setWindowIcon(QIcon(":/lic_logo"))
+        self.setMinimumWidth(800)
+        self.setMinimumHeight(400)
         self.setAcceptDrops(True)
         
         self.undoStack = QUndoStack()
@@ -420,6 +448,7 @@ class LicWindow(QMainWindow):
         
         self.initMenu()
         self.initToolBars()
+        self.initStatusBar()
 
         self.instructions = Instructions(self, self.scene, self.glWidget)
         self.treeModel = LicTreeModel.LicTreeModel(self.treeWidget.tree)
@@ -446,12 +475,14 @@ class LicWindow(QMainWindow):
         # Need to notify the Model when a particular index was deleted
         self.treeModel.connect(self.scene, SIGNAL("itemDeleted"), self.treeModel.deletePersistentItem)
 
-        self.filename = ""   # This will trigger __setFilename below
-                
+        self.filename = ""         # This will trigger __setFilename below
+        self.orginalcontent = []   # This will trigger __setOrginalcontent below      
+        
     def eventFilter(self, receiver, event):
+        tree = self.treeWidget.tree
         if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Tab:
-            self.treeWidget.tree.walkToNextChild()
-            self.treeWidget.tree.pushTreeSelectionToScene()
+            tree.walkToNextChild()
+            tree.pushTreeSelectionToScene()
             return True
             
     # pass the event on to the parent class
@@ -460,12 +491,32 @@ class LicWindow(QMainWindow):
     def showAssistant(self):
         #Initialize Assistant
         if self.assistant is None:
-            self.assistant = LicShortcutAssistant(self)
-            
+            self.assistant = LicShortcutAssistant(self.graphicsView)
+        #Show or Hide    
         if self.assistant.isVisible():
             self.assistant.hide()
         else:
-            self.assistant.show()
+            self.assistant.show()     
+            
+    def showHideRules(self):
+        if not isinstance(self.hRuler, Ruler):
+            self.hRuler = Ruler(Qt.Horizontal,self.graphicsView)
+        if not isinstance(self.vRuler, Ruler):
+            self.vRuler = Ruler(Qt.Vertical,self.graphicsView)
+        
+        if self.hRuler.isVisible():
+            self.hRuler.hide()
+        else:    
+            self.hRuler.show()
+            
+        if self.vRuler.isVisible():
+            self.vRuler.hide()
+        else:    
+            self.vRuler.show()             
+    
+    def runCleanup(self):
+        if self.instructions.mainModel:
+            LicCleanupAssistant(self.instructions.mainModel.getPageList() ,self.graphicsView).show()
 
     def getSettingsFile(self):
         iniFile = os.path.join(os.path.dirname(sys.argv[0]), 'Lic.ini')
@@ -497,19 +548,22 @@ class LicWindow(QMainWindow):
 
     def loadSettings(self):
         settings = self.getSettingsFile()
-        self.latestimportfolder = "."
-        self.recentFiles = settings.value("RecentFiles").toStringList()
-        self.favouriteDirectories = settings.value("favouriteDirectories").toStringList()
+        self.recentFiles = settings.value("Locations/RecentFiles").toStringList()
+        self.favouriteDirectories = settings.value("Locations/favouriteDirectories").toStringList()
+        self.latestimportfolder = str(settings.value("Locations/importDirectory" , ".").toString())
+        
         self.restoreGeometry(settings.value("Geometry").toByteArray())
         self.restoreState(settings.value("MainWindow/State").toByteArray())
         self.splitterState = settings.value("SplitterSizes").toByteArray()
         self.pagesToDisplay = settings.value("PageView", 1).toInt()[0]
         self.snapToGuides = settings.value("SnapToGuides").toBool()
         self.snapToItems = settings.value("SnapToItems").toBool()
+        config.writeL3PActivity = settings.value("L3PAccessLog" ,False).toBool()
+        config.writePOVRayActivity = settings.value("POVAccessLog" ,False).toBool()
 
-        LDrawPath = str(settings.value("LDrawPath").toString())
-        L3PPath = str(settings.value("L3PPath").toString())
-        POVRayPath = str(settings.value("POVRayPath").toString())
+        LDrawPath = str(settings.value("Tools/LDrawPath").toString())
+        L3PPath = str(settings.value("Tools/L3PPath").toString())
+        POVRayPath = str(settings.value("Tools/POVRayPath").toString())
 
         if LDrawPath and L3PPath and POVRayPath:
             config.LDrawPath = LDrawPath
@@ -530,35 +584,82 @@ class LicWindow(QMainWindow):
         
         settings = self.getSettingsFile()
         recentFiles = QVariant(self.recentFiles) if self.recentFiles else QVariant()
-        settings.setValue("RecentFiles", recentFiles)
         favouriteDirectories = QVariant(self.favouriteDirectories) if self.favouriteDirectories else QVariant()
-        settings.setValue("favouriteDirectories", favouriteDirectories)
+        settings.setValue("Locations/RecentFiles", recentFiles)
+        settings.setValue("Locations/favouriteDirectories", favouriteDirectories)
+        settings.setValue("Locations/importDirectory" , self.latestimportfolder)
         settings.setValue("Geometry", QVariant(self.saveGeometry()))
         settings.setValue("MainWindow/State", QVariant(self.saveState()))
         settings.setValue("SplitterSizes", QVariant(self.mainSplitter.saveState()))
         settings.setValue("PageView", QVariant(str(self.scene.pagesToDisplay)))
         settings.setValue("SnapToGuides", QVariant(str(self.scene.snapToGuides)))
         settings.setValue("SnapToItems", QVariant(str(self.scene.snapToItems)))
+        settings.setValue("L3PAccessLog" ,config.writeL3PActivity)
+        settings.setValue("POVAccessLog" ,config.writePOVRayActivity)
 
         if "" == config.L3PPath.strip():
             config.L3PPath = "."
         if "" == config.POVRayPath.strip():
             config.POVRayPath = "."
-        settings.setValue("LDrawPath", QVariant(config.LDrawPath))
-        settings.setValue("L3PPath", QVariant(config.L3PPath))
-        settings.setValue("POVRayPath", QVariant(config.POVRayPath))
+        settings.setValue("Tools/LDrawPath", QVariant(config.LDrawPath))
+        settings.setValue("Tools/L3PPath", QVariant(config.L3PPath))
+        settings.setValue("Tools/POVRayPath", QVariant(config.POVRayPath))
+
+    def loadPosition(self):    
+        settings = self.getSettingsFile()
+        tree = self.treeWidget.tree
+        text = settings.value("TreeView/"+os.path.basename(self.filename)).toStringList()
+
+        startIndex = tree.topIndex
+        for t in text:
+            matches = tree.model().match(startIndex, Qt.DisplayRole, t, 2, Qt.MatchRecursive)
+            if [] != matches and matches[0].isValid():
+                startIndex = matches[0]
+                tree.expand(matches[0])
+                
+        try:
+            tree.selectionModel() .select(matches[0], QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)
+            tree.selectionModel() .setCurrentIndex(matches[0] ,QItemSelectionModel.SelectCurrent)
+        except:
+            pass      
+        else:
+            tree.pushTreeSelectionToScene()          
+        
+    def savePosition(self,modelindex):
+        settings = self.getSettingsFile()
+        nodes = []
+        while modelindex.isValid():
+            nodes.append(str(modelindex.data(Qt.DisplayRole).toPyObject())) 
+            modelindex = modelindex.parent()
+        # reverses the list order -- we need this to restore state from top to bottom 
+        nodes.reverse()
+        if nodes.__len__() > 3:
+            nodes.pop()
+        settings.setValue( "TreeView/"+os.path.basename(self.filename) , nodes )
 
     def copySettingsToScene(self):
         self.scene.setPagesToDisplay(self.pagesToDisplay)
         self.scene.snapToGuides = self.snapToGuides
         self.scene.snapToItems = self.snapToItems
 
+    def checkUpdates(self):
+        self.menuBar().setEnabled(False)
+        downloader = LicDownloadAssistant(self.graphicsView)
+        self.connect( downloader,SIGNAL("finished(int)"), lambda: self.menuBar().setEnabled(True) )
+        downloader.show()
+        
     def configurePaths(self, hideCancelButton = False):
         dialog = config.PathsDialog(self, hideCancelButton)
         dialog.exec_()
         LicImporters.LDrawImporter.LDrawPath = config.LDrawPath
         LicImporters.BuilderImporter.LDrawPath = config.LDrawPath
         self.saveSettings()
+
+    def __getOrginalcontent(self):
+        return self.__orginalcontent
+        
+    def __setOrginalcontent(self, orginalcontent):
+        self.__orginalcontent = orginalcontent
 
     def __getFilename(self):
         return self.__filename
@@ -570,12 +671,12 @@ class LicWindow(QMainWindow):
             config.filename = filename
             self.setWindowTitle("%s - LEGO Instruction Creator %s [*]" % (os.path.basename(filename), __version__))
         
-            self.statusBar().showMessage("Instruction book loaded: %s  [%.0fmin %.3fs]" % (filename ,self._loadTime[0] ,self._loadTime[1]))
+            self.notificationArea.setText("Instruction book loaded: %s  [%.0fmin %.3fs]" % (filename ,self._loadTime[0] ,self._loadTime[1]))
             enabled = True
         else:
             self.undoStack.clear()
             self.setWindowTitle("LEGO Instruction Creator %s [*]" % __version__)
-            self.statusBar().showMessage("")
+            self.statusBar().clearMessage()
             enabled = False
 
         self.undoStack.setClean()
@@ -590,9 +691,19 @@ class LicWindow(QMainWindow):
 
     filename = property(__getFilename, __setFilename)
     latestimportfolder = property(__getLatestfolder ,__setLatestfolder)
+    orginalcontent = property(__getOrginalcontent ,__setOrginalcontent)
 
     def initToolBars(self):
         self.toolBar = None
+
+    def initStatusBar(self):
+        self.notificationArea = QLabel(self)
+        self.notificationArea.setAlignment(Qt.AlignRight)
+        self.notificationArea.setMargin(5)
+        self.zoomInfo = QLabel("100%")
+        self.zoomInfo.setMargin(5)
+        self.statusBar().insertPermanentWidget(0,self.notificationArea)
+        self.statusBar().insertPermanentWidget(1,self.zoomInfo)        
 
     def initMenu(self):
 
@@ -606,6 +717,7 @@ class LicWindow(QMainWindow):
         self.fileOpenRecentMenu = QMenu("Open &Recent", self.fileMenu)
         self.fileOpenFavouriteMenu = QMenu("Open &Favourite", self.fileMenu)
         self.fileCloseAction = self.makeAction("&Close", self.fileClose, QKeySequence.Close, "Close current Instruction book")
+        self.fileReopenAction = self.makeAction("R&eopen", self.fileReopen, None, "Re-opening this Instruction book without concern for the modifications")
          
         self.fileSaveAction = self.makeAction("&Save", self.fileSave, QKeySequence.Save, "Save the Instruction book")
         self.fileSaveAsAction = self.makeAction("Save &As...", self.fileSaveAs, QKeySequence("Ctrl+Shift+S"), "Save the Instruction book using a new filename")
@@ -613,10 +725,11 @@ class LicWindow(QMainWindow):
 
         self.fileSaveTemplateAction = self.makeAction("Save Template", self.fileSaveTemplate, None, "Save only the Template")
         self.fileSaveTemplateAsAction = self.makeAction("Save Template As...", self.fileSaveTemplateAs, None, "Save only the Template using a new filename")
-        self.fileLoadTemplateAction = self.makeAction("Load Template", self.fileLoadTemplate, None, "Discard the current Template and apply a new one")
+        self.fileLoadTemplateAction = self.makeAction("Load Template...", self.fileLoadTemplate, None, "Discard the current Template and apply a new one")
         fileExitAction = self.makeAction("E&xit", SLOT("close()"), "Ctrl+Q", "Save own work and close Me")
         
-        self.fileMenuActions = (fileOpenAction, self.fileOpenRecentMenu, self.fileOpenFavouriteMenu, self.fileCloseAction, None, 
+        self.fileMenuActions = (fileOpenAction, self.fileOpenRecentMenu, self.fileOpenFavouriteMenu, None,
+                                self.fileReopenAction, self.fileCloseAction, None, 
                                 self.fileSaveAction, self.fileSaveAsAction, fileImportAction, None, 
                                 self.fileSaveTemplateAction, self.fileSaveTemplateAsAction, self.fileLoadTemplateAction, None,
                                 fileExitAction)
@@ -646,20 +759,22 @@ class LicWindow(QMainWindow):
         snapMenu.addAction(guideSnapAction)
         snapMenu.addAction(itemSnapAction)
 
-        setPathsAction = self.makeAction("Paths...", self.configurePaths, QKeySequence("Ctrl+,"), "Set paths to LDraw parts, L3p, POVRay, etc")
+        setPathsAction = self.makeAction("Paths...", self.configurePaths, QKeySequence("Ctrl+,"), "Set paths to LDraw parts, L3p, POVRay, etc.")
         editActions = (self.undoAction, self.redoAction, None, snapMenu, setPathsAction)
         self.addActions(editMenu, editActions)
 
         # View Menu
         self.viewMenu = menu.addMenu("&View")
-        addHGuide = self.makeAction("Add Horizontal Guide", lambda: self.scene.addNewGuide(LicLayout.Horizontal), None, "Add Guide")
-        addVGuide = self.makeAction("Add Vertical Guide", lambda: self.scene.addNewGuide(LicLayout.Vertical), None, "Add Guide")
-        removeGuides = self.makeAction("Remove Guides", self.scene.removeAllGuides, None, "Add Guide")
+        addHGuide = self.makeAction("Add Horizontal Guide", lambda: self.scene.addNewGuide(LicLayout.Horizontal))
+        addVGuide = self.makeAction("Add Vertical Guide", lambda: self.scene.addNewGuide(LicLayout.Vertical))
+        removeGuides = self.makeAction("Remove Guides", self.scene.removeAllGuides)
+        self.toogleMarginsAction = self.makeAction("Show Margins", self.scene.showHideMargins, None, None, checkable=True)
+        toogleRules = self.makeAction("Show Metrics", self.showHideRules, Qt.Key_F6, "", checkable=True)
 
         zoom100 = self.makeAction("Zoom &100%", lambda: self.zoom(1.0), QKeySequence("Ctrl+0"), "Show actual page size")
-        zoomToFit = self.makeAction("Zoom To &Fit", self.graphicsView.scaleToFit, QKeySequence("Ctrl+2"), "Fit page by current view")
-        zoomIn = self.makeAction("Zoom &In", lambda: self.zoom(1.2), QKeySequence.ZoomIn, "Zoom In")
-        zoomOut = self.makeAction("Zoom &Out", lambda: self.zoom(1.0 / 1.2), QKeySequence.ZoomOut, "Zoom Out")
+        zoomToFit = self.makeAction("Zoom To &Fit", lambda: self.zoom(), QKeySequence("Ctrl+2"), "Fit page by current view")
+        zoomIn = self.makeAction("Zoom &In", lambda: self.zoom(1.2), QKeySequence.ZoomIn ,"Increase zoom by ono step")
+        zoomOut = self.makeAction("Zoom &Out", lambda: self.zoom(1.0 / 1.2), QKeySequence.ZoomOut ,"Decrease zoom by one step")
 
         onePage = self.makeAction("Show One Page", self.scene.showOnePage, None, "Show One Page", checkable=True)
         twoPages = self.makeAction("Show Two Pages", self.scene.showTwoPages, None, "Show Two Pages", checkable=True)
@@ -676,6 +791,7 @@ class LicWindow(QMainWindow):
             pageGroup.addAction(action)
         
         viewActions = (addHGuide, addVGuide, removeGuides, None, 
+                       self.toogleMarginsAction, toogleRules, None,
                        zoom100, zoomToFit, zoomIn, zoomOut, None, 
                        onePage, twoPages, continuous, continuousFacing)
         self.addActions(self.viewMenu, viewActions)
@@ -683,20 +799,28 @@ class LicWindow(QMainWindow):
         # Export Menu
         self.exportMenu = menu.addMenu("E&xport")
         self.exportToImagesAction = self.makeAction("&Generate Final Images", self.exportImages, None, "Generate final images of each page in this Instruction book")
-        self.exportToPDFAction = self.makeAction("Generate &PDF", self.exportToPDF, QKeySequence("Ctrl+E"), "Create a PDF from this instruction book")
-        self.exportToPOVAction = self.makeAction("NYI - Generate Images with Pov-Ray", self.exportToPOV, None, "Use Pov-Ray to generate final, ray-traced images of each page in this Instruction book")
+        self.exportToPDFAction = self.makeAction("Generate &PDF", self.exportToPDFExecutor, QKeySequence("Ctrl+E"), "Create a PDF from this instruction book")
+        self.exportToPOVAction = self.makeAction("NYI - Generate Images with Pov-&Ray", lambda: thread.start_new_thread(self.exportToPOV,()), None, "Use Pov-Ray to generate images of each page in this Instruction book")
         self.exportToMPDAction = self.makeAction("Generate &MPD", self.exportToMPD, None, "Generate an LDraw MPD file from the parts & steps in this Instruction book")
         self.addActions(self.exportMenu, (self.exportToImagesAction, self.exportToPDFAction, self.exportToPOVAction, None, self.exportToMPDAction))
 
         # Model Manu
-        modelMenu = menu.addMenu("&Model")
-        shortcutAssistant = self.makeAction("Toggle Assistant", lambda: self.showAssistant(), QKeySequence.HelpContents ,"Show or hide Assistant")
+        self.modelMenu = menu.addMenu("&Model")
+        toggleAssistant = self.makeAction("Toggle &Assistant", lambda: self.showAssistant(), QKeySequence.HelpContents ,"Show or hide the list of keyboard shortcuts and license information")
+        runCleanup = self.makeAction("Run &Clean-up", self.runCleanup, Qt.Key_F2, "Run clean-up utility")
+        restoreOrginal = self.makeAction("Restore &Orginal", self.restoreModel, None ,"Restore model from this Instruction book")
+        cacheFolder = self.makeAction("&Explore Cache", lambda: startfile( config.modelCachePath() ), Qt.Key_F4, "Opens cache directory for this Instruction")
+        checkUpdates= self.makeAction("Check for Library &Updates...", self.checkUpdates, None, "Checking repository for latest updated files")
         
-        modelAction = (None, shortcutAssistant)
-        self.addActions(modelMenu, modelAction)
+        modelAction = (toggleAssistant, runCleanup, None, restoreOrginal, cacheFolder, None, checkUpdates)
+        self.addActions(self.modelMenu, modelAction)
 
-    def zoom(self, factor):
-        self.graphicsView.scaleView(factor)
+    def zoom(self, factor = 0.0):
+        if factor == 0.0:
+            scale = self.graphicsView.scaleToFit() *100
+        else:
+            scale = self.graphicsView.scaleView(factor) *100
+        self.zoomInfo.setText("%.0f%%" % scale)
         
     def setSnapToGuides(self, snap):
         self.snapToGuides = self.scene.snapToGuides = snap
@@ -803,6 +927,9 @@ class LicWindow(QMainWindow):
         return action
 
     def closeEvent(self, event):
+        current = self.treeWidget.tree.selectionModel().currentIndex()
+        self.savePosition(current)
+        
         if self.offerSave():
             self.saveSettings()
             
@@ -814,17 +941,38 @@ class LicWindow(QMainWindow):
             event.ignore()
 
     def fileClose(self, offerSave = True):
+        current = self.treeWidget.tree.selectionModel().currentIndex()
+        self.savePosition(current)
+        if self.toogleMarginsAction.isChecked():
+            self.toogleMarginsAction.activate(QAction.Trigger)
+            
+        
         if offerSave and not self.offerSave():
             return False
-        self.addFavouriteDirectory(self.filename)
         self.scene.emit(SIGNAL("layoutAboutToBeChanged()"))
+        self.addFavouriteDirectory(self.filename)
+        self.zoomInfo.setText("100%")
+        self.notificationArea.clear()
         self.instructions.clear()
         self.treeModel.reset()
         self.treeModel.root = None
         self.scene.clear()
-        self.filename = None
+        self.filename = ""
         self.scene.emit(SIGNAL("layoutChanged()"))
+        
+        if self.scene._assist is not None:
+            self.scene._assist.close()
         return True
+    
+    def fileReopen(self):
+        filename = self.filename
+        self.fileClose(False)
+        try:
+            self.loadLicFile(filename)
+        except IOError, ex:
+            self.fileClose(False)        
+            QMessageBox.warning(self, "Open Error", "%s\n%s" % (filename,ex.message))
+            pass
 
     def offerSave(self):
         """ 
@@ -842,7 +990,7 @@ class LicWindow(QMainWindow):
     def fileImport(self):
         if not self.offerSave():
             return
-        folder = os.path.dirname(self.filename) if self.filename is not None else self.latestimportfolder
+        folder = os.path.dirname(self.filename) if self.filename is not "" else self.latestimportfolder
         formats = LicImporters.getFileTypesString()
         filename = unicode(QFileDialog.getOpenFileName(self, "Import Model", folder, formats))
         if filename:
@@ -851,13 +999,25 @@ class LicWindow(QMainWindow):
             QTimer.singleShot(50, lambda: self.importModel(filename))
 
     def importModel(self, filename):
-
         if not self.fileClose():
             return
 
         startTime = time.time()
         progress = LicDialogs.LicProgressDialog(self, "Importing " + os.path.basename(filename))
         progress.setValue(2)  # Try and force dialog to show up right away
+
+        self.orginalcontent = []
+        self._orginalsaved = False
+        try:
+            with open(filename) as f:
+                self.orginalcontent = f.read().splitlines()
+                f.close()
+        except Exception ,ex:
+            writeLogEntry(ex.message,self.__class__.__name__)
+            self.orginalcontent = []
+            pass
+        else:
+            self._orginalname = filename
 
         loader = self.instructions.importModel(filename)
         progress.setMaximum(loader.next())  # First value yielded after load is # of progress steps
@@ -880,6 +1040,7 @@ class LicWindow(QMainWindow):
 #            template.createBlankTemplate(self.glWidget)
         except IOError, unused:
             # Could not load default template, so load template stored in resource bundle
+            writeLogEntry("Could not load default template, so load template stored in resource bundle",self.__class__.__name__)
             template = LicBinaryReader.loadLicTemplate(":/default_template", self.instructions)
         
         template.filename = ""  # Do not preserve default template filename
@@ -896,16 +1057,39 @@ class LicWindow(QMainWindow):
 
         self._loadTime = divmod(time.time() - startTime, 60)
         config.filename = filename
-        self.statusBar().showMessage("Model imported: %s  [%.0fmin %.3fs]" % (filename ,self._loadTime[0] ,self._loadTime[1]))
+        self.notificationArea.setText("Model imported: %s  [%.0fmin %.3fs]" % (filename ,self._loadTime[0] ,self._loadTime[1]))
         self.setWindowModified(True)
         self.enableMenus(True)
         self.copySettingsToScene()
 
         progress.incr("Finishing up...")
         progress.setValue(progress.maximum())
+        
+        simpleModel = False
+        if self.instructions.mainModel:
+            simpleModel = [] == self.instructions.mainModel.submodels
+        
+        self.exportToPOVAction.setEnabled(simpleModel)
+        self.fileReopenAction.setEnabled(False)        
 
-    def loadLicFile(self, filename):
+    def restoreModel(self):
+        message = "Nothing to restore"
+        if not self.orginalcontent:
+            self.orginalcontent = self.instructions.modelcontent["content"]
+            self._orginalname   = self.instructions.modelcontent["name"]
+        try:
+            if self.orginalcontent:
+                fname = os.path.join( config.modelCachePath() ,self._orginalname )  
+                with open(fname,"w") as f:
+                    f.write( "\n".join(self.orginalcontent).replace("\n\n", "\n") )
+                    f.close()
+                    message = "Model restored to:" +fname
+        except Exception, e:
+            message = "Failed to restore. See lic.log"
+            writeLogEntry(e.message, self.__class__.__name__)
+        self.notificationArea.setText(message)
 
+    def loadLicFile(self, filename):            
         startTime = time.time()
         progress = LicDialogs.LicProgressDialog(self, "Opening " + os.path.basename(filename))
         progress.setValue(2)  # Try and force dialog to show up right away
@@ -923,7 +1107,7 @@ class LicWindow(QMainWindow):
             if progress.wasCanceled():
                 loader.close()
                 self.fileClose()
-                self.statusBar().showMessage("Open File aborted")
+                self.notificationArea.setText("Open File aborted")
                 return
             progress.incr()
 
@@ -938,14 +1122,25 @@ class LicWindow(QMainWindow):
         self._loadTime = divmod(time.time() - startTime, 60)
         self.filename = filename
 
+        self.loadPosition()
+        
+        simpleModel = False
+        if self.instructions.mainModel:
+            simpleModel = [] == self.instructions.mainModel.submodels
+        
+        self.exportToPOVAction.setEnabled(simpleModel)
+
     def enableMenus(self, enabled):
         self.fileCloseAction.setEnabled(enabled)
+        self.fileReopenAction.setEnabled(enabled)
         self.fileSaveAction.setEnabled(enabled)
         self.fileSaveAsAction.setEnabled(enabled)
         self.fileSaveTemplateAction.setEnabled(enabled)
         self.fileSaveTemplateAsAction.setEnabled(enabled)
         self.fileLoadTemplateAction.setEnabled(enabled)
+        
         self.viewMenu.setEnabled(enabled)
+        self.modelMenu.setEnabled(enabled)
         self.exportMenu.setEnabled(enabled)
         
         self.treeWidget.treeToolBar.setEnabled(enabled)
@@ -975,7 +1170,12 @@ class LicWindow(QMainWindow):
             if os.path.isfile(tmpXName):
                 os.remove(tmpXName)
 
-            LicBinaryWriter.saveLicFile(tmpXName, self.instructions)
+            if not self._orginalsaved:
+                content = self.orginalcontent
+                self._orginalsaved = True
+            else:
+                content = []
+            LicBinaryWriter.saveLicFile(tmpXName, self.instructions, content, self._orginalname)
 
             if os.path.isfile(tmpName):
                 os.remove(tmpName)
@@ -986,11 +1186,13 @@ class LicWindow(QMainWindow):
             self.undoStack.setClean()
             self.addRecentFile(self.filename)
             self.addFavouriteDirectory(self.filename)
-            self.statusBar().showMessage("Saved to: " + self.filename)
+            self.notificationArea.setText("Saved to: " + self.filename)
+            self.fileReopenAction.setEnabled(True)
+            self.setWindowModified(False)
             return True
 
-        except (IOError, OSError), e:
-            QMessageBox.warning(self, "Save Error", "Failed to save %s: %s" % (self.filename, e.message))
+        except (IOError, OSError), ex:
+            QMessageBox.warning(self, "Save Error", "Failed to save %s: %s" % (self.filename, ex.message))
         return False
 
     def fileSaveTemplate(self):
@@ -1006,9 +1208,9 @@ class LicWindow(QMainWindow):
 
         try:
             LicBinaryWriter.saveLicTemplate(template)
-            self.statusBar().showMessage("Saved Template to: " + template.filename)
-        except (IOError, OSError), e:
-            QMessageBox.warning(self, "Save Error", "Failed to save %s: %s" % (template.filename, e.message))
+            self.notificationArea.setText("Saved Template to: " + template.filename)
+        except (IOError, OSError), ex:
+            QMessageBox.warning(self, "Save Error", "Failed to save %s: %s" % (template.filename, ex.message))
     
     def fileSaveTemplateAs(self):
         template = self.instructions.template
@@ -1021,14 +1223,14 @@ class LicWindow(QMainWindow):
     
     def fileLoadTemplate(self):
         templateName = self.instructions.template.filename
-        # TODO: Check what happens if templateName has no path
+        #TODO: Check what happens if templateName has no path
         folder = os.path.dirname(templateName) if templateName != "" else "."  
         newFilename = unicode(QFileDialog.getOpenFileName(self, "Load Template", folder, "Template (*.lit)"))
         if newFilename and os.path.basename(newFilename) != templateName:
             try:
                 newTemplate = LicBinaryReader.loadLicTemplate(newFilename, self.instructions)
-            except IOError, e:
-                error_message = "Load Template Error", "Failed to open %s: %s" % (newFilename, e.message)
+            except IOError, ex:
+                error_message = "Load Template Error", "Failed to open %s: %s" % (newFilename, ex.message)
                 QMessageBox.warning(self, error_message)
                 LicHelpers.writeLogEntry(error_message ,self.__class__.__name__)
             else:
@@ -1069,14 +1271,22 @@ class LicWindow(QMainWindow):
         for label in loader:
             if progress.wasCanceled():
                 loader.close()
-                self.statusBar().showMessage("Image Export aborted")
+                self.notificationArea.setText("Image Export aborted")
                 return
             label = "Rendering " + os.path.splitext(os.path.basename(label))[0].replace('_', ' ')
             progress.incr(label)
 
         self.glWidget.makeCurrent()
-        self.statusBar().showMessage("Exported images to: " + config.finalImageCachePath())
-
+        self.notificationArea.setText("Exported images to: " + config.finalImageCachePath())
+    
+    def exportToPDFExecutor(self):
+        self.scene.removeAllGuides()
+        if self.toogleMarginsAction.isChecked():
+            self.toogleMarginsAction.activate(QAction.Trigger)
+        
+        self._worker = LicWorker([self.exportToPDF])
+        self._worker.start()
+           
     def exportToPDF(self):
         loader = self.instructions.exportToPDF()
         filename = loader.next()
@@ -1089,18 +1299,29 @@ class LicWindow(QMainWindow):
         for label in loader:
             if progress.wasCanceled():
                 loader.close()
-                self.statusBar().showMessage("PDF Export aborted")
+                self.notificationArea.setText("PDF Export aborted")
                 return
             progress.incr(label)
 
         progress.setValue(progress.maximum())
 
         self.glWidget.makeCurrent()
-        self.statusBar().showMessage("Exported PDF to: " + filename)
+        self.notificationArea.setText("Exported PDF to: " + filename)
                  
     def exportToPOV(self):
-        self.instructions.exportToPOV()
-        self.statusBar().showMessage("NYI - POV Export is broken")
+        if not LicPovrayWrapper.isExists() or not LicL3PWrapper.isExists():
+            dialog = config.PathsDialog(self)
+            dialog.exec_()
+        
+        if not LicPovrayWrapper.isExists() or not LicL3PWrapper.isExists():
+            QMessageBox.warning(self , "Export Error", "Choose correct path for L3P and POV-Ray")
+        else:
+            try:
+                self.instructions.exportToPOV()   
+            except Exception ,e:
+                self.notificationArea.setText ("NYI - Export is broken")
+            else:
+                self.notificationArea.setText ("NYI - Export Done. Check %s" % config.modelCachePath())
 
     def exportToMPD(self):
         f = self.filename if self.filename else self.instructions.getModelName()
@@ -1110,6 +1331,7 @@ class LicWindow(QMainWindow):
             fh = open(filename, 'w')
             self.instructions.mainModel.exportToLDrawFile(fh)
             fh.close()
+            self.notificationArea.setText ("MPD - Export Done. Check %s" % filename)
 
 def setupExceptionLogger():
 
@@ -1155,7 +1377,7 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     app.setOrganizationName("BugEyedMonkeys Inc.")
     app.setOrganizationDomain("bugeyedmonkeys.com")
-    app.setApplicationName("Lic")
+    app.setApplicationName("LICreator")
     window = LicWindow()
 
     try:
@@ -1176,9 +1398,9 @@ if __name__ == '__main__':
     if sys.argv.__len__() == 2:
         if os.path.isfile(sys.argv[1]):
             if sys.argv[1].lower()[-3:] not in ['exe','com','bat','py','pyw']:
-                filename = sys.argv[1].strip()
+                filename = sys.argv[1].strip().lower()
     if filename:
-        QTimer.singleShot(50, lambda: loadFile(window, filename.lower()))
+        QTimer.singleShot(50, lambda: loadFile(window, filename))
 
     #updateAllSavedLicFiles(window)
     app.exec_()

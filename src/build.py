@@ -24,13 +24,15 @@
 # the currently checked out project.  This is because pysvn doesn't yet work
 # correctly on osx.  Boo.
   
+import errno
 import os
+import shutil
+import subprocess
 import sys
 import zipfile
-import subprocess
+
 import Lic
-import shutil
-import errno
+
 
 def perr(s):
     print s

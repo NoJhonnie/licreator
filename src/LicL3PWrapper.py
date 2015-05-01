@@ -19,9 +19,12 @@
     along with this program.  If not, see http://www.gnu.org/licenses/
 """
 
-import os      # For setting LDraw environment and process creation
+import os  # For setting LDraw environment and process creation
+import sys  # For detect platform and operating system     
+
+import LicHelpers  # For writeLogEntry ,writeLogAccess
 import config  # For path to l3p
-import LicHelpers # For writeLogEntry ,writeLogAccess
+
 
 def listToCSVStr(l):
     s = ''
@@ -33,6 +36,10 @@ def boolToCommand(command, bool):
     if bool:
         return command
     return ''
+
+def isExists():
+    app = os.path.join(config.L3PPath ,'l3p.exe').replace("\\", "/")
+    return os.path.exists(app)
 
 def __getDefaultCommand():
     return dict({
@@ -78,6 +85,7 @@ def __runCommand(d):
         return
     
     args = [l3pApp]
+    mode = os.P_WAIT
     for key, value in d.items():
         command = l3pCommands[key]
         if command:
@@ -88,8 +96,12 @@ def __runCommand(d):
             else:
                 args.append(value)
                 
-    LicHelpers.writeLogAccess(" ".join(args))
-    os.spawnv(os.P_WAIT, l3pApp, args) 
+    if config.writeL3PActivity:                
+        LicHelpers.writeLogAccess(" ".join(args))
+    if sys.platform == 'win32':
+        mode = os.P_DETACH
+        
+    os.spawnv(mode, l3pApp, args)
 
 def createPovFromDat(datFile, color = None):
     
@@ -105,8 +117,14 @@ def createPovFromDat(datFile, color = None):
         l3pCommand = __getDefaultCommand()
         l3pCommand['inFile'] = "\"%s\"" % datFile.replace("\\", "/")
         l3pCommand['outFile'] = "\"%s\"" % povFile.replace("\\", "/")
+        l3pCommand['color'] = 83
         if color:
-            l3pCommand['color'] = color.code()
+            lDrawCode = color.code()
+    # LDraw Internal Common Material Colours cause error, so we need change them to different color 
+            if color.code() in [16,24]:
+    # LEGOID 149 - Metallic Black
+                lDrawCode = 83
+            l3pCommand['color'] = lDrawCode
         __runCommand(l3pCommand)
         
     return povFile

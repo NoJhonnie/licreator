@@ -22,10 +22,11 @@
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 
-from LicModel import *
-from LicUndoActions import *
-from LicTreeModel import *
 from LicHelpers import LicColor
+from LicModel import *
+from LicTreeModel import *
+from LicUndoActions import *
+
 
 class Page(PageTreeManager, GraphicsRoundRectItem):
     """ A single page in an instruction book.  Contains one or more Steps. """
@@ -349,8 +350,7 @@ class Page(PageTreeManager, GraphicsRoundRectItem):
         if self.submodelItem:
             self.submodelItem.initLayout()
 
-        # Remove any separators - we'll re-add them in the appropriate place later
-        # TODO: fix this, since it's expensive because it changes tree model
+        #Remove any separators - we'll re-add them in the appropriate place later
         self.removeAllSeparators()  
 
         pageRect = self.insetRect()
@@ -414,8 +414,7 @@ class Page(PageTreeManager, GraphicsRoundRectItem):
         items = self.getAllChildItems()
         options = QStyleOptionGraphicsItem()
         optionList = [options] * len(items)
-#         FIXME: TypeError: drawItems() takes exactly 5 arguments (4 given)
-#         self.scene().drawItems(painter, items, optionList)
+        self.scene().drawItems(painter, items, optionList, image)
 
         for step in self.steps:
             painter.drawImage(step.csi.scenePos(), step.csi.pngImage)
@@ -423,10 +422,12 @@ class Page(PageTreeManager, GraphicsRoundRectItem):
             for callout in step.callouts:
                 for s in callout.steps:
                     painter.drawImage(s.csi.scenePos(), s.csi.pngImage)
-            
             if step.hasPLI():
                 for item in step.pli.pliItems:
-                    painter.drawImage(item.scenePos(), item.pngImage)
+                    try:
+                        painter.drawImage(item.scenePos(), item.pngImage)
+                    except AttributeError:
+                        pass
 
         if self.submodelItem:
             painter.drawImage(self.submodelItem.pos() + PLI.margin, self.submodel.pngImage)
@@ -454,6 +455,29 @@ class Page(PageTreeManager, GraphicsRoundRectItem):
         painter.setBrush(self.brush())
         painter.drawRoundedRect(self.insetRect(), self.cornerRadius, self.cornerRadius)
 
+    def exportGLImage(self):
+
+        try:
+            w = Page.PageSize.width()
+            h = Page.PageSize.height()
+            bufferManager = LicGLHelpers.FrameBufferManager(w, h)
+            exportedFilename = self.getGLImageFilename()
+
+            bufferManager.bindMSFB()
+            LicGLHelpers.initFreshContext(True)
+
+            self.drawGLItemsOffscreen(QRectF(0, 0, w, h), 0.9)
+            bufferManager.blitMSFB()
+            data = bufferManager.readFB()
+            
+            image = Image.fromstring("RGBA", (w, h), data)
+            image = image.transpose(Image.FLIP_TOP_BOTTOM)
+            image.save(exportedFilename)
+        finally:
+            bufferManager.cleanup()
+            if self.scene().parent():
+                self.scene().parent().notificationArea.setText("Saved to: %s" % exportedFilename)
+        
     def drawGLItems(self, rect):
         
         LicGLHelpers.pushAllGLMatrices()
@@ -513,6 +537,8 @@ class Page(PageTreeManager, GraphicsRoundRectItem):
 
         stack = self.scene().undoStack
         menu = QMenu(self.scene().views()[0])
+        eventPos = event.scenePos() if hasattr(event, "scenePos") else QPointF(1,1)
+            
         if not self.isLocked():
             menu.addAction("Auto Layout", lambda: stack.push(LayoutItemCommand(self, self.getCurrentLayout())))
 
@@ -521,7 +547,6 @@ class Page(PageTreeManager, GraphicsRoundRectItem):
                 menu.addAction("Use Vertical layout", self.useVerticalLayout)
             else:
                 menu.addAction("Use Horizontal layout", self.useHorizontalLayout)
-        #menu.addAction("Check for Overlaps", self.checkForLayoutOverlaps)
 
         menu.addSeparator()
 
@@ -536,10 +561,12 @@ class Page(PageTreeManager, GraphicsRoundRectItem):
                 menu.addAction("Show Step Separators", lambda: self.showHideSeparators(True))
 
         menu.addAction("Add blank Step", self.addBlankStepSignal)
-        menu.addAction("Add Annotation", lambda: self.addAnnotationSignal(event.scenePos()))
+        menu.addAction("Add Annotation", lambda: self.addAnnotationSignal(eventPos))
         menu.addSeparator()
         if not self.steps:
             menu.addAction("Delete Page", lambda: stack.push(AddRemovePageCommand(self.scene(), self, False)))
+            menu.addSeparator()
+        menu.addAction("Render Me",self.exportGLImage)
         menu.exec_(event.screenPos())
 
     def useVerticalLayout(self):
@@ -669,9 +696,14 @@ class PageAnnotation(QGraphicsPixmapItem):
         self.isAnnotation = True
         if pos:
             self.setPos(pos)
+        if pixmap:
+            self.adjustToPageSize()
 
     def data(self, index):
-        return "Annotation: " + os.path.basename(self.filename)
+        if index in [Qt.WhatsThisRole,Qt.AccessibleTextRole]:
+            return self.__class__.__name__
+        else:
+            return "Annotation: " + os.path.basename(self.filename)
     
     def contextMenuEvent(self, event):
         menu = QMenu(self.scene().views()[0])
@@ -684,6 +716,29 @@ class PageAnnotation(QGraphicsPixmapItem):
             menu.addAction("Move to Foreground", lambda: stack.push(ToggleAnnotationOrderCommand(self, True)))
         menu.exec_(event.screenPos())
 
+    def adjustToPageSize(self):
+        a = False
+        s = Page.PageSize
+        p = self.pixmap()
+        wt= p.width()
+        ht= p.height()
+        if p: 
+            win = self.scene().parent()
+            if p.height() > s.height():
+                a = True
+                p = p.scaledToHeight(s.height())
+            if p.width() > s.width():
+                a = True
+                p = p.scaledToWidth(s.width())
+            if a:
+                self.setPixmap(p)
+                win.notificationArea.setText("{0}x{1} is larger that {2}x{3}. Image is resized".format( wt,ht,s.width(),s.height() ))
+            else:
+                x = self.pos().x()
+                y = self.pos().y()
+                win.notificationArea.setText("The image was placed at position {0} , {1}".format(x,y))
+                
+        
     def changePicture(self):
         filename = unicode(QFileDialog.getOpenFileName(self.scene().activeWindow(), "Open Annotation Image", "", "Images (*.png *.jpg)"))
         if filename:
@@ -802,6 +857,7 @@ class PartListPage(PartListPageTreeManager, Page):
             row = parentModel.pages[-1]._row + 1
         Page. __init__(self, parentModel, instructions, number, row)
 
+        self._numbering = False
         self.numberItem._row = 0
         self.pli = PartListPLI(self)
 
@@ -820,7 +876,7 @@ class PartListPage(PartListPageTreeManager, Page):
             return  # Don't make any layout changes to locked pages
         self.resetPageNumberPosition()
         self.pli.doOverflowLayout()
-        # TODO: Need to handle bumping items from page to page, so can do post-loaded auto-layouts
+        #TODO: Need to handle bumping items from page to page, so can do post-loaded auto-layouts
 
     def doOverflowLayout(self):
         overflowItems = self.pli.doOverflowLayout()
@@ -846,7 +902,13 @@ class PartListPage(PartListPageTreeManager, Page):
 
     def contextMenuEvent(self, event):
         menu = QMenu(self.scene().views()[0])
-        menu.addAction("Add Annotation", lambda: self.addAnnotationSignal(event.scenePos()))
+        eventPos = event.scenePos() if hasattr(event, "scenePos") else QPointF(1,1)
+            
+        menu.addAction("Add Annotation", lambda: self.addAnnotationSignal(eventPos))
+        if self._numbering:
+            menu.addAction("Hide Design numbers" ,self.clearNumbering)
+        else:
+            menu.addAction("Show Design numbers" ,self.numbering)
         menu.exec_(event.screenPos())
 
     def updatePartList(self):
@@ -864,6 +926,20 @@ class PartListPage(PartListPageTreeManager, Page):
 
         return pageList
 
+    def clearNumbering(self):
+        self._numbering = False
+        for glItem in self.glItemIterator():
+            glItem.setCode( "" )
+            glItem.resetRect()
+        
+    def numbering(self):
+        self._numbering = True
+        for glItem in self.glItemIterator():
+            designNumber = glItem.abstractPart.design()
+            if designNumber > 0:
+                glItem.setCode( designNumber )
+                glItem.resetRect()
+
     @staticmethod
     def createPartListPages(instructions):
 
@@ -873,15 +949,20 @@ class PartListPage(PartListPageTreeManager, Page):
 class EditableTextItem(QGraphicsSimpleTextItem):
     
     itemClassName = "Page Number"
-    _margin =20
 
     def __init__(self, text, parent):
         QGraphicsSimpleTextItem.__init__(self, text, parent)
         self.setFlags(AllFlags)
         self.setFont(QFont("Arial", 15))
+        self._margin = LicLayout.PageDefaultMargin
 
     def data(self, index):
-        return "Label: " + self.text()
+        if index == Qt.AccessibleTextRole:
+            return "Label"
+        elif index == Qt.WhatsThisRole:
+            return self.__class__.__name__
+        else:
+            return "Label: " + self.text()
          
     def remove(self):
         action = AddRemoveLabelCommand(self.parentItem(), self, self.parentItem().labels.index(self), False)
@@ -894,9 +975,9 @@ class EditableTextItem(QGraphicsSimpleTextItem):
         menu.addAction("Set Font", self.setNewFontSignal)
         menu.addAction("Remove Label", self.remove)
         menu.addSeparator()
-        menu.addAction("Move to Left", self.setAlignLeftSignal)
-        menu.addAction("Move to Right", self.setAlignRightSignal)
-        menu.addAction("Centre", self.setAlignCentreSignal)
+        menu.addAction("Move to Left", lambda: self.setAlign(Qt.AlignLeft))
+        menu.addAction("Move to Right", lambda: self.setAlign(Qt.AlignRight))
+        menu.addAction("Centre horizontally", lambda: self.setAlign(Qt.AlignHCenter))
         menu.exec_(event.screenPos())
 
     def setNewFontSignal(self):
@@ -913,19 +994,20 @@ class EditableTextItem(QGraphicsSimpleTextItem):
         if ok:
             self.scene().undoStack.push(CalloutBorderFitCommand(self, self.text(), newText))
 
-    def setAlignLeftSignal(self):
-        pt = QPointF(self._margin,self.y())
-        self.setPos(pt)
-
-    def setAlignRightSignal(self):
-        x =self.parentItem().boundingRect()[2] -self.boundingRect()[2] -self._margin;
-        pt = QPointF(x,self.y())
-        self.setPos(pt)
-
-    def setAlignCentreSignal(self):
-        x = self.parentItem().boundingRect()[2]/2 -self._margin*2;
-        pt = QPointF(x,self.y())
-        self.setPos(pt)
+    def setAlign(self, direction):
+        ptF = QPointF()
+        if direction == Qt.AlignHCenter:
+            x = self.parentItem().boundingRect()[2]/2 -self._margin*2 -self.boundingRect()[2]/2
+            ptF = QPointF(x,self.y())    
+        elif direction == Qt.AlignLeft:
+            ptF = QPointF(self._margin,self.y())
+        elif direction == Qt.AlignRight:
+            x =self.parentItem().boundingRect()[2] -self.boundingRect()[2] -self._margin
+            ptF = QPointF(x,self.y())     
+                     
+        self.oldPos = self.pos()
+        self.setPos(ptF)
+        self.scene().undoStack.push(MoveCommand([self]))
 
     def mouseDoubleClickEvent(self, event):
         self.setTextSignal()
@@ -1019,16 +1101,18 @@ class TitlePage(TitlePageTreeManager, Page):
 
     def contextMenuEvent(self, event):
         menu = QMenu(self.scene().views()[0])
+        eventPos = event.scenePos() if hasattr(event, "scenePos") else QPointF(1,1)
         menu.addAction("Auto Layout", self.initLayout)
         menu.addSeparator()
-        menu.addAction("Add Annotation", lambda: self.addAnnotationSignal(event.scenePos()))
+        menu.addAction("Add Annotation", lambda: self.addAnnotationSignal(eventPos))
         menu.addAction("Add Label", lambda: self.addNewLabel(event.scenePos(), useUndo = True))
         if self.getPartCountLabel() is None:
             menu.addAction("Add Part Count Label", lambda: self.addPartCountLabel(True))
         if self.getPageCountLabel() is None:
             menu.addAction("Add Page Count Label", lambda: self.addPageCountLabel(True))
         if self.submodelItem is None:
-            menu.addAction("Add Model Preview - NYI", lambda: True)  # TODO: Allow user to add / remove title page model preview
+            #TODO: Allow user to add / remove title page model preview
+            menu.addAction("Add Model Preview - NYI", lambda: True) 
             
         menu.addSeparator()
         menu.addAction("Remove Title Page", lambda: self.submodel.addRemoveTitlePageSignal(False))

@@ -21,12 +21,13 @@
 
 import os
 import sys
+
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 
+
 # Path to LDraw, L3P and PovRay.  These are set by user through PathsDialog below.
 # Contents below are just some brain-dead default settings for a very first run of Lic. 
-
 if sys.platform.startswith('win'):
     LDrawPath = ""
     L3PPath = ""
@@ -125,6 +126,10 @@ class PathsDialog(QDialog):
 
 filename = ""  # Set when a file is loaded
 
+# SET to True L3PAccessLog | POVAccessLog in configuration file; If you have know what this tool is doing for you
+writeL3PActivity = False
+writePOVRayActivity = False
+
 def checkPath(pathName, root = None):
     root = root if root else modelCachePath()
     path = os.path.join(root, pathName)
@@ -155,3 +160,10 @@ def glImageCachePath():
 
 def pdfCachePath():
     return checkPath('PDFs')
+
+def grayscalePath():
+    return checkPath('parts',rootCachePath())
+
+def getCodesFile():
+    iniFile = os.path.join(os.path.dirname(sys.argv[0]), 'cache', 'parts', 'codes.ini')
+    return QSettings(QString(iniFile), QSettings.IniFormat)

@@ -18,8 +18,11 @@
     along with this program.  If not, see http://www.gnu.org/licenses/
 """
 
+import logging
 import os.path
+
 import LDrawImporter
+
 
 LDrawPath = None  # This will be set by the object calling this importer
 
@@ -36,6 +39,10 @@ class BuilderImporter(LDrawImporter.LDrawImporter):
     
     def __init__(self, filename, instructions, parent = None):
         LDrawImporter.LDrawImporter.__init__(self, filename, instructions, parent)
+
+
+    def writeLogEntry(self, message):
+        logging.warning('------------------------------------------------------\n BuilderImporter => %s' % message)        
 
 Comment = '0'
 PartCommand = '1'

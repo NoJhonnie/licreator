@@ -20,10 +20,13 @@
 """
 
 import math
+
 from PyQt4.QtCore import *
+
 
 Horizontal = 0
 Vertical = 1
+PageDefaultMargin = 15
 
 def maxSafe(s):
     return max(s) if s else 0.0

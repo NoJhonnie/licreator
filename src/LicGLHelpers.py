@@ -20,22 +20,19 @@
 """
 
 import Image, ImageChops
+from OpenGL.GL import *
+from OpenGL.GL.EXT.framebuffer_blit import *
+from OpenGL.GL.EXT.framebuffer_multisample import *
+from OpenGL.GL.EXT.framebuffer_object import *
+from OpenGL.GLU import *
+from PyQt4.QtCore import QPointF
+from PyQt4.QtOpenGL import QGLFormat, QGL
+
 
 # Optimization: turn off PyOpenGL error checking, which is a major source of slowdown
 #import OpenGL
 #OpenGL.ERROR_CHECKING = False
 #OpenGL.ERROR_LOGGING = False
-
-from OpenGL.GL import *
-from OpenGL.GLU import *
-
-from OpenGL.GL.EXT.framebuffer_object import *
-from OpenGL.GL.EXT.framebuffer_multisample import *
-from OpenGL.GL.EXT.framebuffer_blit import *
-
-from PyQt4.QtCore import QPointF
-from PyQt4.QtOpenGL import QGLFormat, QGL
-
 UNINIT_GL_DISPID = -1
 
 def IdentityMatrix():
@@ -50,7 +47,7 @@ def getGLFormat():
     return format
 
 def drawCoordLines(length = 20.0):
-    glPushAttrib(GL_CURRENT_BIT)
+    glPushAttrib(GL.GL_CURRENT_BIT)
     
     glBegin(GL_LINES)
     glColor4f(1.0, 0.0, 0.0, 1.0)

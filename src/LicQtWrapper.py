@@ -19,10 +19,48 @@
     along with this program.  If not, see http://www.gnu.org/licenses/
 """
 
+from subprocess import Popen
+from PyQt4.Qt import QGraphicsItem
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 
 import LicLayout
+import os 
+
+
+class ExtendedLabel(QLabel):
+    _state= {}
+    _switched= False
+ 
+    def __init(self, parent=None):
+        QLabel.__init__(self, parent=None)
+ 
+    def __setSwitched(self,state):
+        self._switched = state
+        
+    def __getSwitched(self):
+        return self._switched
+    
+    switched = property(__getSwitched,__setSwitched)
+    
+    def setSwitchablePixmap(self ,stateOn=None , stateOff=None):
+        self._state= {}
+        if isinstance(stateOn, QPixmap) and isinstance(stateOff, QPixmap):
+            self._state = { True: stateOn , False: stateOff }
+        
+    def enterEvent(self, *args, **kwargs):
+        self.setCursor(Qt.PointingHandCursor)
+        return QLabel.enterEvent(self, *args, **kwargs)
+
+    def leaveEvent(self, *args, **kwargs):
+        self.unsetCursor()
+        return QLabel.leaveEvent(self, *args, **kwargs)    
+    
+    def mouseReleaseEvent(self, event):
+        if {} != self._state:
+            self.setPixmap(self._state[self.switched])
+        self.switched = not self.switched
+        self.emit(SIGNAL('clicked()'))
 
 def genericNormalizePosition(self, childrenToSkip = []):
     x, y = self.rect().topLeft()
@@ -120,7 +158,7 @@ class GraphicsCircleLabelItem(QGraphicsEllipseItem):
         self._row = 1
         self.setFont(self.defaultFont)
         self.lengthText = length
-        self.labelColor = QColor(Qt.black)  # TODO: implement Part length label color
+        self.labelColor = QColor(Qt.black)  #TODO: implement Part length label color
         self.data = lambda index: "Length Indicator (%s)" % length
 
     def paint(self, painter, option, widget = None):
@@ -294,7 +332,6 @@ def genericMouseMoveEvent(className):
         className.mouseMoveEvent(self, event)
         if (self.flags() & QGraphicsItem.ItemIsMovable) == QGraphicsItem.ItemIsMovable:
             self.scene().snap(self)
-        #snapToGrid(self)
     return _tmp
     
 def genericMouseReleaseEvent(className):
@@ -316,7 +353,7 @@ QGraphicsItem.oldPos = None  # Give all items an oldPos; saves a hasAttr check i
 QGraphicsItem.fixedSize = False # Give all items an unset FixedSize 
 
 QGraphicsLineItem.mousePressEvent = genericMousePressEvent(QGraphicsItem)
-QGraphicsLineItem.mouseMoveEvent = genericMouseMoveEvent(QAbstractGraphicsShapeItem)
+QGraphicsLineItem.mouseMoveEvent = genericMouseMoveEvent(QGraphicsItem)
 QGraphicsLineItem.mouseReleaseEvent = genericMouseReleaseEvent(QGraphicsItem)
 
 QGraphicsRectItem.mousePressEvent = genericMousePressEvent(QAbstractGraphicsShapeItem)
@@ -344,3 +381,9 @@ def getFilename(self):
     return filename[8:].strip() # trim off leading 'file:///' from uri
 
 QMimeData.getFilename = getFilename
+
+def startfile(filename):
+    try:
+        os.startfile(filename)
+    except:
+        Popen(['xdg-open', filename])

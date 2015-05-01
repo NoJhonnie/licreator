@@ -19,9 +19,12 @@
     along with this program.  If not, see http://www.gnu.org/licenses/
 """
 
-import os      # For process creation
-import config
-import LicHelpers # For access to writeLogEntry ,writeLogAccess
+import os  # For process creation
+import time
+
+import LicHelpers  # For access to writeLogEntry ,writeLogAccess
+import config  # For pov-ray path
+
 
 def boolToCommand(command, bool):
     if bool:
@@ -59,12 +62,16 @@ povCommands = {
     'verbose' : ['Verbose=', str],      # Boolean - Turns verbose messages on/off
     'alpha'   : ['Output_Alpha=', str], # Boolean - Turns alpha channel on/off
     'anti-alias' : ['Antialias=', str], # Boolean - Turns anti-aliasing on/off
-    'jitter'  : ['Jitter=', str],        # Boolean - Turns aa-jitter on/off
+    'jitter'  : ['Jitter=', str],       # Boolean - Turns aa-jitter on/off
 
     'quality' : ['+Q', str], # Render quality - integer from (0 <= n <= 11)
     
     'include' : ['+HI', str], # Include any extra files - specify full filename
 }
+
+def isExists():
+    app = os.path.join(config.POVRayPath,'pvengine.exe').replace("\\", "/")
+    return os.path.exists(app)
 
 def __runCommand(d):
 
@@ -86,7 +93,9 @@ def __runCommand(d):
             else:
                 args.append(value)
                 
-    LicHelpers.writeLogAccess(" ".join(args))
+    if config.writePOVRayActivity:                
+        LicHelpers.writeLogAccess(" ".join(args))
+                
     os.spawnv(os.P_WAIT, POVRayApp, args)
     
 # camera = [('x', 20), ('y', 45), ('z', -90)]
@@ -99,7 +108,7 @@ def __fixPovFile(filename, imgWidth, imgHeight, offset, camera):
         return
     originalFile = open(filename, 'r')
     
-    # Bug in l3p: if we're rendering only one part, l3p declares it as an object, 
+    # Bug in L3P: if we're rendering only one part, L3P declares it as an object, 
     # not union; PovRay then ignores the color, and we get a black part
     objectName = os.path.splitext(os.path.basename(filename))[0]
     objectName = objectName.replace('_', '__') + '_dot_dat'
@@ -149,30 +158,33 @@ def __fixPovFile(filename, imgWidth, imgHeight, offset, camera):
     originalFile.close()
     copyFile.close()
     
-    # Need a second pass to fixup last object in file - could only determine last object on first pass, not fix it
+    #Determine last object in file on first pass, and try fix it.
     originalFile = open(tmpFilename, 'r')
     copyFile = open(filename, 'w')
     
     for line in originalFile:
-    
         if line != lastObjectLine:
             copyFile.write(line)
         else:
+            obj = filter(None ,lastObjectLine.partition('#if'))
+            for m in obj:
+                startPosition = m.rfind('}') -1
+                if startPosition <= 0:
+                    startPosition = m.__len__()
             # Insert the main object line...
-            split = lastObjectLine.partition('#if')
-            copyFile.write(split[0] + '\n')
-            
+                copyFile.write(m[:startPosition] + '\n')
+                
             # ... with proper rotations inserted...
-            for axis, amount in camera:
-                if axis == 'x':
-                    copyFile.write('\trotate <%f, 0, 0>\n' % amount)
-                elif axis == 'y':
-                    copyFile.write('\trotate <0, %f, 0>\n' % amount)
-                elif axis == 'z':               
-                    copyFile.write('\trotate <0, 0, %f>\n' % amount)
-            
+                for axis, amount in camera:
+                    if axis == 'x':
+                        copyFile.write('\trotate <%f, 0, 0>\n' % amount)
+                    elif axis == 'y':
+                        copyFile.write('\trotate <0, %f, 0>\n' % amount)
+                    elif axis == 'z':               
+                        copyFile.write('\trotate <0, 0, %f>\n' % amount)
+                
             # ... then the rest of the original object line
-            copyFile.write(''.join(split[1:]))
+                copyFile.write(''.join(m[startPosition:]))
     
     originalFile.close()
     copyFile.close()

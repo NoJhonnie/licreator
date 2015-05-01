@@ -19,14 +19,14 @@
     along with this program.  If not, see http://www.gnu.org/licenses/
 """
 
-from LicModel import *
 from LicCustomPages import *
-from LicUndoActions import *
-from LicQtWrapper import *
-
-import LicGradientDialog
 import LicDialogs
 import LicGLHelpers
+import LicGradientDialog
+from LicModel import *
+from LicQtWrapper import *
+from LicUndoActions import *
+
 
 class TemplateLineItem(object):
 
@@ -146,7 +146,10 @@ class TemplatePage(TemplateRectItem, Page):
     filename = property(__getFilename, __setFilename)
 
     def data(self, index):
-        return "Template - %s" % ("default" if self.__filename == "" else os.path.basename(self.__filename))
+        if index in [Qt.WhatsThisRole,Qt.AccessibleTextRole]:
+            return self.__class__.__name__
+        else:        
+            return "Template - %s" % ("default" if self.__filename == "" else os.path.basename(self.__filename))
 
     def postLoadInit(self, filename):
         # TemplatePages are rarely instantiated directly - instead, they're regular Page
@@ -586,7 +589,6 @@ class TemplateStepSeparator(TemplateLineItem, StepSeparator):
     def contextMenuEvent(self, event):
         menu = QMenu(self.scene().views()[0])
         menu.addAction("Format Line", self.formatBorder)
-        #menu.addAction("Remove All Step Separators", None) #lambda: self.setItemFont(item))
         menu.exec_(event.screenPos())
 
     def setPen(self, newPen):
@@ -602,23 +604,14 @@ class TemplateStep(Step):
     def contextMenuEvent(self, event):
         menu = QMenu(self.scene().views()[0])
         menu.addAction("Disable PLIs" if self.hasPLI() else "Enable PLIs", self.togglePLIs)
-        #menu.addSeparator()
-        #menu.addAction("Format Background", self.formatBackground)  # TODO: implement step fills
-        #arrowMenu = menu.addMenu("Format Background")
-        #arrowMenu.addAction("Color", self.setBackgroundColor)
-        #arrowMenu.addAction("Gradient", self.setBackgroundColor)
-        #rrowMenu.addAction("Image", self.setBackgroundColor)
         menu.exec_(event.screenPos())
 
     def togglePLIs(self):
         self.scene().undoStack.push(TogglePLIs(self.getPage(), not self.hasPLI()))
 
-    def formatBackground(self):
-        pass
-
 class TemplatePLIItem(PLIItem):
     
-    # TODO: this class does nothing when selected, so do not allow it to be selected
+    #TODO: this class does nothing when selected, so do not allow it to be selected
     def contextMenuEvent(self, event):
         event.ignore()
 

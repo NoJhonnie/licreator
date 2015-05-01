@@ -19,11 +19,13 @@
     along with this program.  If not, see http://www.gnu.org/licenses/
 """
 
+
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 
-import os
 import LicHelpers
+from LicQtWrapper import ExtendedLabel
+
 
 def makeLabelSpinBox(self, text, value, min, max, signal = None, double = False, percent = False):
     
@@ -45,6 +47,7 @@ def makeSpinBox(self, value, min, max, signal = None, double = False, percent = 
         
     spinBox.setRange(min, max)
     spinBox.setValue(value)
+    spinBox.setSingleStep(10)
     
     if signal:
         self.connect(spinBox, SIGNAL("valueChanged(double)") if double else SIGNAL("valueChanged(int)"), signal)
@@ -60,12 +63,13 @@ def addWidgetRow(self, row, widgetList):
 
 QGridLayout.addWidgetRow = addWidgetRow
 
+
 class LicProgressDialog(QProgressDialog):
 
     def __init__(self, parent, title):
         QProgressDialog.__init__(self, parent, Qt.CustomizeWindowHint | Qt.WindowTitleHint)
         legoBar = QProgressBar(self) 
-        self.setStyleSheet("QProgressBar {height: 24px; text-align: center; padding: 1px 1px;} QProgressBar::chunk {background-image: url(:/lic_progressbar); width: 24px;}")
+        self.setStyleSheet("QProgressBar { height: 24px; text-align: center; padding: 1px 1px;} QProgressBar::chunk {background-image: url(:/lic_progressbar); width: 24px; }")
         self.setBar(legoBar)
         
         self.setWindowModality(Qt.WindowModal)
@@ -78,7 +82,6 @@ class LicProgressDialog(QProgressDialog):
         self.setValue(1)  # Try and force dialog to show up right away
         self.count = 0
         
-
     def incr(self, label = None):
         self.count += 1
         if label:
@@ -92,7 +95,9 @@ class ColorButton(QToolButton):
 
         self.brush = QBrush(QColor.fromRgbF(*color.rgba))
         self.colorCode = color
-        self.setToolTip(color.name)
+        
+        colorName = self.color.name if self.color else "Unnamed"
+        self.setToolTip(colorName)
 
     def paintEvent(self, event):
         QToolButton.paintEvent(self, event)
@@ -140,6 +145,172 @@ class LDrawColorDialog(QDialog):
         self.emit(SIGNAL('changeColor'), self.originalColor)
         QDialog.reject(self)
 
+class MessageDlg(QWidget):
+    def __init__(self ,parent=None ,initSize=QSize(400,40)):
+        QWidget.__init__(self,parent,Qt.SubWindow)   
+
+        x = parent.width()/2 -initSize.width()/2 if parent else 1
+        self.setGeometry(x,1,initSize.width(),initSize.height())
+        self.setBackgroundRole(QPalette.Base)
+        self._icon = QLabel()
+        self._icon.setPixmap(QIcon(":/lic_logo").pixmap(32,32))
+        self._message = QLabel()
+        
+        self.button1 = ExtendedLabel()
+        button2 = ExtendedLabel()
+        button2.setPixmap( QCommonStyle().standardIcon (QStyle.SP_BrowserStop).pixmap(16,16) )
+        self.connect(button2 ,SIGNAL("clicked()") ,self.close)
+        
+        hbox= QHBoxLayout()
+        hbox.addWidget(self._icon,0,Qt.AlignTop)
+        hbox.addWidget(self._message,1,Qt.AlignLeft)
+        hbox.addSpacing(5)
+        hbox.addWidget(self.button1)
+        hbox.addWidget(button2)
+        self.setLayout(hbox)   
+        
+    def paintEvent(self, event):
+    # prepare canvas
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor(LicHelpers.SUBWINDOW_BACKGROUND))
+    # draw border
+        p_old = p.pen()
+        p_new = QPen(QBrush(QColor(Qt.black) ,Qt.Dense6Pattern ), 2.0)
+        p.setPen(p_new)
+        p.drawRect( QRectF(1, 1, self.width() -2, self.height() -2) )
+        p.setPen(p_old)
+        
+    def closeEvent(self, event):
+        self.emit(SIGNAL('finished(int)') ,event.type())
+        return QWidget.closeEvent(self, event)
+    
+    def setText(self,text):
+        self._message.setText(text)
+
+class AdjustAreaDialog(QDialog):
+    _minValue = 10
+    _dialog = None
+    
+    def __init__(self, parent, originalRect, absolutePos):
+        QDialog.__init__(self, parent,  Qt.CustomizeWindowHint | Qt.WindowTitleHint)
+        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.setWindowTitle("Adjust View")
+        self.originalRect = originalRect
+        self.startPos = absolutePos
+
+        buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal)
+        self.widthSpinBox = self.makeSpinBox(originalRect.width(), self._minValue, 1000.0, None)
+        self.heightSpinBox = self.makeSpinBox(originalRect.height(), self._minValue, 1000.0, None)
+        self.xyzWidget = XYZWidget(None, -1000, 1000, originalRect.x(), originalRect.y(), 1.0)
+
+        self.conn = ExtendedLabel(self)
+        self.conn.setSwitchablePixmap(QPixmap(":/link_break"),QPixmap(":/link"))
+        self.conn.setPixmap(QPixmap(":/link_break"))
+        
+        find = ExtendedLabel(self)
+        find.setPixmap(QPixmap(":/find"))
+
+        vbox = QVBoxLayout()
+        vbox.addWidget(self.widthSpinBox)
+        vbox.addWidget(self.heightSpinBox)
+        
+        hbox = QHBoxLayout()
+        hbox.addSpacing(25)
+        hbox.addLayout(vbox,1)
+        hbox.addWidget(self.conn)
+        
+        grid = QGridLayout()
+        grid.addLayout(hbox, 1, 1 ,Qt.AlignHCenter)
+        grid.addWidget(self.xyzWidget, 2, 1)
+        grid.addWidget(find, 2, 2 ,Qt.AlignTop)
+        grid.addWidget(buttonBox, 3, 0, 1, 3)
+        self.setLayout(grid)    
+        self.move( parent.window().pos().x() , parent.mapToGlobal(parent.pos()).y() )
+
+        self.connect(buttonBox, SIGNAL("accepted()"), self, SLOT("accept()"))
+        self.connect(buttonBox, SIGNAL("rejected()"), self, SLOT("reject()"))
+        self.connect(find, SIGNAL('clicked()'), self.findPointSignal)
+        
+        self.connect(self.widthSpinBox, SIGNAL("valueChanged(int)"), self.changeWidth)
+        self.connect(self.heightSpinBox, SIGNAL("valueChanged(int)"), self.changeHeight)
+        self.connect(self.xyzWidget.xSpinBox, SIGNAL("valueChanged(int)"), self.change)
+        self.connect(self.xyzWidget.ySpinBox, SIGNAL("valueChanged(int)"), self.change)
+        
+        self.xyzWidget.zSpinBox.setEnabled(False)
+        self.widthSpinBox.selectAll()
+        self.heightSpinBox.selectAll()
+        
+        # Can not use setModal or setWindowModality. Because a modal window is one that blocks input to other windows.
+        # So We need have still access to scene.
+        win = parent.window()
+        win.menuBar().setEnabled(False)
+        win.treeWidget.setEnabled(False)
+        
+    def hideEvent(self, *args, **kwargs):
+        scene = self.parent().scene()
+        win = self.parent().window()
+        if self._dialog:
+            self._dialog.close()
+        self.discard()
+
+        win.menuBar().setEnabled(True)
+        win.treeWidget.setEnabled(True)        
+        return QDialog.hideEvent(self, *args, **kwargs)
+    
+    def findPointSignal(self):
+        view = self.parent()
+        self._dialog = MessageDlg(view)
+        self._dialog.setText("Choose the point on scene.")
+        self._dialog.show()
+        # Inform QGraphicsScene to doing nothing ,except return mouse cursor coordinates
+        view.scene().catchTheMouse = True 
+        self.connect(view.scene() ,SIGNAL("sceneClick") ,self.findPoint)
+        self.connect(self._dialog ,SIGNAL("finished(int)") ,self.discard)
+    
+    def findPoint(self ,event):
+        sp = self.startPos
+        pt = ( event.scenePos() )
+        x  = pt.x() -sp.x()
+        y  = pt.y() -sp.y()
+        self.xyzWidget.xSpinBox.setValue(x)
+        self.xyzWidget.ySpinBox.setValue(y)
+        self._dialog.close()
+        
+    def changeWidth(self):
+        if self.conn.switched:
+            self.heightSpinBox.setValue(self.widthSpinBox.value())
+        self.change()
+        
+    def changeHeight(self):
+        if self.conn.switched:
+            self.widthSpinBox.setValue(self.heightSpinBox.value())
+        self.change()
+        
+    def discard(self):
+        scene = self.parent().scene()
+        # This is necessary to not run into TypeError: findPoint() takes exactly 2 arguments (1 given)   
+        self.disconnect(scene, SIGNAL("sceneClick") ,self.findPoint)
+        scene.catchTheMouse = False
+        
+    def change(self):
+        wt = self.widthSpinBox.value()
+        ht = self.heightSpinBox.value()
+        if wt >= self._minValue and ht >= self._minValue: 
+            newSize = QSize( wt , ht )
+            newPoint= QPoint( self.xyzWidget.xyz()[0] , self.xyzWidget.xyz()[1] )
+            newRect = QRect(newPoint,newSize)
+            if newSize.isValid() and newRect.isValid():
+                self.emit(SIGNAL("changeRect"), newRect)    
+    
+    def accept(self):
+        self.change()
+        self.parent().window().setWindowModified(True)
+        QDialog.accept(self)
+        
+    def reject(self):
+        self.emit(SIGNAL("changeRect"), self.originalRect)
+        QDialog.reject(self)    
+    
 class PageSizeDlg(QDialog):
 
     def __init__(self, parent, pageSize, resolution):
@@ -147,7 +318,7 @@ class PageSizeDlg(QDialog):
         self.setWindowTitle("Page Size")
         self.originalPageSize = pageSize
         self.notifySizeChange = True
-
+        
         pixelWidthLabel, self.pixelWidthSpinBox, = self.makeLabelSpinBox("&Width:", pageSize.width(), 1, 50000, self.pixelWidthChanged)
         pixelHeightLabel, self.pixelHeightSpinBox  = self.makeLabelSpinBox("&Height:", pageSize.height(), 1, 50000, self.pixelHeightChanged)
         self.pixelFormatComboBox = QComboBox()
@@ -161,7 +332,7 @@ class PageSizeDlg(QDialog):
         grid.addWidget(self.pixelFormatComboBox, 0, 2, 2, 1, Qt.AlignVCenter)
         self.setGridSize(grid)
         
-        self.pixelGroupBox = QGroupBox("Image Size (pixels):", self)
+        self.pixelGroupBox = QGroupBox("Image Size:", self)
         self.pixelGroupBox.setCheckable(True)
         self.pixelGroupBox.setChecked(True)
         self.pixelGroupBox.setLayout(grid)
@@ -598,7 +769,7 @@ class ScaleDlg(QDialog):
         self.setWindowTitle("Set Size")
         self.originalSize = originalSize
 
-        sizeLabel, self.sizeSpinBox = self.makeLabelSpinBox("&Size:", originalSize * 100.0, 0.1, 1000.0, self.sizeChanged, True, True)
+        sizeLabel, self.sizeSpinBox = self.makeLabelSpinBox("&Size:", originalSize * 100.0, 0.1, 1000.0, None, True, True)
         buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal)
 
         grid = QGridLayout()
@@ -611,12 +782,9 @@ class ScaleDlg(QDialog):
         self.connect(buttonBox, SIGNAL("rejected()"), self, SLOT("reject()"))
         self.sizeSpinBox.selectAll()
         
-    def sizeChanged(self):
+    def accept(self):
         newSize = self.sizeSpinBox.value() / 100.0
         self.emit(SIGNAL("changeScale"), newSize)
-    
-    def accept(self):
-        self.emit(SIGNAL("acceptScale"), self.originalSize)
         QDialog.accept(self)
         
     def reject(self):
@@ -657,7 +825,7 @@ class RotationDialog(QDialog):
 
         self.originalRotation = list(rotation)
 
-        self.xyzWidget = XYZWidget(self.rotationChanged, -360, 360, *self.originalRotation)
+        self.xyzWidget = XYZWidget(None, -360, 360, *self.originalRotation)
         buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal)
         self.connect(buttonBox, SIGNAL("accepted()"), self, SLOT("accept()"))
         self.connect(buttonBox, SIGNAL("rejected()"), self, SLOT("reject()"))
@@ -666,14 +834,10 @@ class RotationDialog(QDialog):
         box.addWidget(self.xyzWidget)
         box.addWidget(buttonBox)
 
-        self.rotationChanged()
         self.xyzWidget.selectFirst()
 
-    def rotationChanged(self):
-        self.emit(SIGNAL("changeRotation"), self.xyzWidget.xyz())
-
     def accept(self):
-        self.emit(SIGNAL("acceptRotation"), self.originalRotation)
+        self.emit(SIGNAL("changeRotation"), self.xyzWidget.xyz())
         QDialog.accept(self)
 
     def reject(self):
@@ -759,7 +923,7 @@ class ArrowDisplaceDlg(QDialog):
         extension = QWidget()
         box = QBoxLayout(QBoxLayout.TopToBottom, extension)
         box.addWidget(self.tipXYZWidget)
-        #box.addWidget(self.endXYZWidget)  # TODO: Either implement arbitrary arrow end point positions or remove this
+        #box.addWidget(self.endXYZWidget)  #TODO: Either implement arbitrary arrow end point positions or remove this
 
         self.moreButton = QPushButton(self.tr("X - Y - Z"))
         self.moreButton.setCheckable(True)

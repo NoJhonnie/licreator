@@ -19,11 +19,13 @@
     along with this program.  If not, see http://www.gnu.org/licenses/
 """
 
+from PyQt4.QtCore import SIGNAL, QSizeF , QPointF ,Qt
 from PyQt4.QtGui import QUndoCommand, QPixmap
-from PyQt4.QtCore import SIGNAL, QSizeF
 
-import LicHelpers
 import LicGLHelpers
+import LicHelpers
+import LicLayout
+
 
 def resetGLItem(self, templateItem):
     instructions = templateItem.getPage().instructions
@@ -41,7 +43,8 @@ def resetGLItem(self, templateItem):
         instructions.mainModel.initAllPLILayouts()
 
     elif templateItem.itemClassName == "SubmodelPreview":
-        instructions.mainModel.initSubmodelImages()  # TODO: Template rotate Submodel Image is broken for nested submodels (viper.lic)
+        #FIXME: Template rotate Submodel Image is broken for nested submodels (viper.lic)
+        instructions.mainModel.initSubmodelImages()  
 
 NextCommandID = 122
 def getNewCommandID():
@@ -64,7 +67,11 @@ class MoveCommand(QUndoCommand):
     _id = getNewCommandID()
     
     def __init__(self, itemList):
-        QUndoCommand.__init__(self, "move Page Object")
+        cnt = itemList.__len__()
+        dat = itemList[0].data(Qt.AccessibleTextRole)
+        dat = dat.toPyObject() if hasattr(dat, "toPyObject") else dat
+        lbl = dat if cnt == 1 else "%d Page Objects" % cnt
+        QUndoCommand.__init__(self, "move %s" % lbl)
 
         self.itemList = []
         for item in itemList:
@@ -94,7 +101,7 @@ class ResizeCommand(QUndoCommand):
         else:
             self.item.setRect(rect)
 
-class LayoutItemCommand(QUndoCommand):  # TODO: Should be able to undo Step Layouts (for Create Callout, etc)
+class LayoutItemCommand(QUndoCommand):  #TODO: Should be able to undo Step Layouts (for Create Callout, etc)
 
     _id = getNewCommandID()
 
@@ -196,12 +203,16 @@ class BeginEndDisplacementCommand(QUndoCommand):
 
     def doAction(self, redo):
         part = self.part
+        backupPos = part.getCSI().pos()
         part.scene().emit(SIGNAL("layoutAboutToBeChanged()"))
         part.addNewDisplacement(self.direction) if redo else part.removeDisplacement()
         part.scene().emit(SIGNAL("layoutChanged()"))
         part.getCSI().resetPixmap()
         if part.originalPart: # Part is in Callout - resize Callout
             part.getStep().resetRect()
+            
+        part.getCSI().setPos(backupPos)
+            
 
 class ResizePageCommand(QUndoCommand):
 
@@ -465,7 +476,8 @@ class AddRemovePageCommand(QUndoCommand):
 
     def doAction(self, redo):
         page = self.page
-        self.scene.emit(SIGNAL("layoutAboutToBeChanged()"))
+        if self.scene:
+            self.scene.emit(SIGNAL("layoutAboutToBeChanged()"))
 
         if (redo and self.addPage) or (not redo and not self.addPage):
             page.submodel.addPage(page)
@@ -474,8 +486,9 @@ class AddRemovePageCommand(QUndoCommand):
             page.submodel.deletePage(page)
             number = page.number - 1
 
-        self.scene.emit(SIGNAL("layoutChanged()"))
-        self.scene.selectPage(number)
+        if self.scene:
+            self.scene.emit(SIGNAL("layoutChanged()"))
+            self.scene.selectPage(number)
         
 class AddRemoveTitlePageCommand(QUndoCommand):
     
@@ -522,9 +535,23 @@ class AddRemoveGuideCommand(QUndoCommand):
         if (redo and self.addGuide) or (not redo and not self.addGuide):
             self.scene.guides.append(self.guide)
             self.scene.addItem(self.guide)
+            
+            if self.scene.guides.__len__() >1:
+                cg =self.guide.pos() 
+                for g in self.scene.guides:
+                    lg = g.pos()  
+                    if self.guide.orientation == g.orientation:
+                        if g.orientation == LicLayout.Horizontal:
+                            if cg[1] == lg[1]:
+                                cg = QPointF(cg[0], cg[1] +LicLayout.PageDefaultMargin)
+                        elif g.orientation == LicLayout.Vertical:
+                            if cg[0] == lg[0]:
+                                cg = QPointF(cg[0] +LicLayout.PageDefaultMargin, cg[1])
+                self.guide.setPos(cg)
         else:
             self.scene.removeItem(self.guide)
             self.scene.guides.remove(self.guide)
+    
 
 class AddRemoveAnnotationCommand(QUndoCommand):
 
@@ -732,6 +759,7 @@ class ChangeAnnotationPixmap(QUndoCommand):
     def doAction(self, redo):
         filename = self.newFilename if redo else self.oldFilename
         self.annotation.setPixmap(QPixmap(filename))
+        self.annotation.adjustToPageSize()
 
 class ToggleAnnotationOrderCommand(QUndoCommand):
 

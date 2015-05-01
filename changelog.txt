@@ -1,6 +1,80 @@
-0.8.501------------------------------------------------------
+1.0.000----------------------------------------------------------------------------
+:: Improved positioning of preview of submodel /add margins, etc./
+:: Improved usability of guide lines
+:: Introduce utility for clean-up of instruction book
+:: Handling QThread class to stop freezing application one some behaviors 
+:: Handling AttributeError exception in BaseTreeManager 
+:: Re-organize imports
+:: Added PageDefaultMargin variable into LicLayout
+:: Assign SubmodelPreview._margin variable to LicLayout.PageDefaultMargin
+:: Assign EditableTextItem._margin variable to LicLayout.PageDefaultMargin
+:: Added ability to show | hide margins of page
+:: Added SUBWINDOW_BACKGROUND variable for Assistants
+:: Added topIndex read-only property for LicTreeView
+:: Remember now latest selected page ,step oor other element on scene 
+:: Custom color 0x04 recognized now as opaque, not transparent dither
+:: Export support custom colors as string containing an integer as hexadecimal
+:: Added notification when export collection of Multi-Part LDraw Files is done
+:: Handling AttributeError for duplicate method of Part class
+:: Turn off context menu for multiple selection on LicTreeView
+:: Added shortcut to explore cache directory
+:: Improved adjusting the amount of the displacement of a part 
+:: Assistant has a length established by the number of typed shortcuts
+:: Added surfix 'Log' to L3PAccess and POVAccess name in configuration file
+:: Cleaned all instance of contextMenuEvent
+:: Added ability to move one part between step of different pages
+:: Added ability to show | hide design number of parts
+:: Improved usability of annotation
+:: Change restore path to cache model directory, for handling IOError exception
+:: Re-opening ability available only on saved instruction
+:: Added function that adjust view so that all elements are visible /PLIItem ,etc./
+:: Fixed group of miscellaneous bugs
+:: Update placeholder when the has unsaved changes on scene /LicWindow.fileSave/
+:: Added ExtendedLabel.setSwitchablePixmap method
+:: Added ExtendedLabel.switched property
+:: Set cursor on PointingHandCursor for ExtendedLabel 
+:: Set the value of step to ten for XYZWidget
+:: Move SUBWINDOW_BACKGROUND from LicAssistantWidget to LicHelpers
+:: Added LicGraphicsScene.catchTheMouse property
+:: SubmodelPreview.moveTo connected to undo stack
+:: LicUndoActions.MoveCommand use Qt.AccessibleTextRole or the number of objects in undo stack
+:: Changed StaticGuide on FixedGuide
+:: Changed menu item label "Toggle Margins" on "Show Margins" and set as checkable
+:: Merge setAlignLeftSignal, setAlignRightSignal, setAlignHCentreSignal into setAlign /EditableTextItem/
+:: Connect EditableTextItem.setAlign to undo stack
+:: Added support of Qt.WhatsThisRole | Qt.AccessibleTextRole role
+:: Added horizontal and vertical ruler
+:: Resolve saveSelection, restoreSelection method /LicGraphicsScene/
+:: Supplemented descriptions for items in main menu
+:: NOTE: Template elements are no longer movable
+0.9.002------------------------------------------------------------------------
+:: Set minimum size of width and height of application 
+:: Assistant now display properly 
+:: Fixed group of miscellaneous bugs
+:: Key TAB can now work in loop
+:: Added ability to re-opening current Instruction book
+:: Disable real-time preview for speed-up and avoid crash situation
+:: Added the ability to positioning the preview of sub-model from then menu
+:: LicColor class can now use colors from LDConfig.ldr file
+:: Remember now latest import location
+:: Re-organize configuration file
+:: Added switch options to monitoring L3P ,POV-Ray activities
+:: Added option to restore data source of imported model
+:: Added delimitation of the notification area for tool-tip and other 
+:: Added information about value of current zoom
+:: Handling AttributeError exception for: 
+:: - getPartBoundingBox
+:: - callGLDisplayList
+:: - renderFinalImageWithPov 
+:: - updatePersistentIndices 
+:: Rewritten LicPovrayWrapper class
+:: Provided information about license and author 
+:: Support of custom colors of user /0x, opaque; 0x02, opaque; 0x03, 50% Alpha/
+:: Support of invisible color /0x07, 10% Alpha/
+:: NOTICE: POV-Ray calls work only on instruction without submodels
+0.8.501------------------------------------------------------------------------
 :: Added support of import models created by SR 3DBuilder
-:: Fixed some major bugs when generate images with Pov-Ray
+:: Fixed some major bugs when generate images with POV-Ray
 :: Major improvements in error handling
 :: Support technique of DRag & DRop for open|import models 
 :: Upgrade user interface

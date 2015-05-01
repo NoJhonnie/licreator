@@ -23,6 +23,7 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from PyQt4.QtOpenGL import *
 
+
 class HoverPoints(QObject):
     
     CircleShape = 1

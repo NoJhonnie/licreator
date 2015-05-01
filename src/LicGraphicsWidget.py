@@ -22,11 +22,14 @@
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 
-from LicModel import *
 from LicCustomPages import *
-import LicUndoActions
-import LicLayout
 import LicGLHelpers
+import LicLayout
+from LicModel import *
+from LicAssistantWidget import LicPlacementAssistant
+import LicUndoActions
+from LicTemplate import TemplatePage
+
 
 class LicGraphicsView(QGraphicsView):
     def __init__(self, parent):
@@ -37,7 +40,7 @@ class LicGraphicsView(QGraphicsView):
         self.setRenderHint(QPainter.TextAntialiasing)
         self.setCacheMode(QGraphicsView.CacheNone)
         self.setAcceptDrops(True)
-        self.setOptimizationFlag(8, True)  # TODO: When PyQt is fixed, this 8 should be QGraphicsView.IndirectPainting
+        self.setOptimizationFlag(8, True)  #TODO: When PyQt is fixed, this 8 should be QGraphicsView.IndirectPainting
         self.viewport().setAttribute(Qt.WA_StyledBackground, True)
 
     def scaleView(self, scaleFactor):
@@ -51,6 +54,8 @@ class LicGraphicsView(QGraphicsView):
                     self.scene().scaleFactor = factor
                     self.scale(scaleFactor, scaleFactor)
 
+        return self.scene().scaleFactor
+
     def scaleToFit(self):
         vw, vh = self.geometry().size() - QSize(20, 20)
         pw, ph = Page.PageSize * self.scene().scaleFactor
@@ -60,6 +65,8 @@ class LicGraphicsView(QGraphicsView):
                 self.scaleView(float(vw) / pw)  # Scale to fit width
             else:
                 self.scaleView(float(vh) / ph)  # Scale to fit height
+                
+        return self.scene().scaleFactor
         
     def dragEnterEvent(self, event):
         self.parentWidget().dragEnterEvent(event)
@@ -75,11 +82,31 @@ class LicGraphicsScene(QGraphicsScene):
 
     PageViewContinuous = -1
     PageViewContinuousFacing = -2
+    hasMargins = False
+    
+    _staticGuides = []
+    _crossGuides = []
+    _selected = []
+    
+    _assist = None
+    _catchTheMouse = False
         
     def __init__(self, parent):
         QGraphicsScene.__init__(self, parent)
         self.setBackgroundBrush(Qt.gray)
         self.reset()
+        
+    def __getCatchTheMouse(self):
+        return self._catchTheMouse
+    
+    def __setCatchTheMouse(self, state):
+        self._catchTheMouse = state
+        if state:
+            self.saveSelection()
+        else:
+            self.restoreSelection()
+        
+    catchTheMouse = property(__getCatchTheMouse,__setCatchTheMouse)    
         
     def reset(self):
         self.scaleFactor = 1.0
@@ -94,6 +121,16 @@ class LicGraphicsScene(QGraphicsScene):
         self.snapToItems = True
         self.renderMode = 'full' # Or "background" or "foreground"
 
+        self.guide1v = None
+        self.guide2v = None
+        self.guide1h = None
+        self.guide2h = None        
+
+    def markToMove(self, part=None):       
+        if self._assist is None: 
+            self._assist = LicPlacementAssistant( self.views()[0] )
+        self._assist.setItemtoMove(part)
+        
     def createSnapLine(self):
         snapLine = QGraphicsLineItem()
         pen = QPen(Qt.darkCyan)
@@ -104,16 +141,18 @@ class LicGraphicsScene(QGraphicsScene):
         self.addItem(snapLine)
         return snapLine
 
-    def saveSelection(self):  # TODO: implement this, so we can save & restore selections on image export
-        #self.savedSelection = list(self.selectedItems())
-        pass
+    def saveSelection(self):  
+        self._selected = list(self.selectedItems())
 
     def restoreSelection(self):
-        pass
+        if [] != self._selected:
+            for item in self._selected:
+                item.setSelected(True)
             
     def clearSelection(self):
         self.clearSelectedParts()
         self.selectedSubmodels = []
+        self._selected = []
         QGraphicsScene.clearSelection(self)
         
     def clearSelectedParts(self):
@@ -404,6 +443,32 @@ class LicGraphicsScene(QGraphicsScene):
     def addNewGuide(self, orientation):
         self.undoStack.push(LicUndoActions.AddRemoveGuideCommand(self, Guide(orientation, self), True))
 
+    def showHideMargins(self):
+        if not isinstance(self.guide1v, FixedGuide):
+            self.guide1v = FixedGuide(LicLayout.Vertical, self)
+        if not isinstance(self.guide2v, FixedGuide):
+            self.guide2v = FixedGuide(LicLayout.Vertical, self)
+        if not isinstance(self.guide1h, FixedGuide):
+            self.guide1h = FixedGuide(LicLayout.Horizontal, self)
+        if not isinstance(self.guide2h, FixedGuide):
+            self.guide2h = FixedGuide(LicLayout.Horizontal, self)
+        self._staticGuides = [self.guide1v,self.guide2h,self.guide2v,self.guide1h]
+        
+        if self.hasMargins:
+            for g in self._staticGuides:
+                g.hide()
+        
+        if not self.hasMargins:
+            self.guide1v.setPos(QPointF(LicLayout.PageDefaultMargin , LicLayout.PageDefaultMargin))
+            self.guide2v.setPos(QPointF(self.width() -LicLayout.PageDefaultMargin , LicLayout.PageDefaultMargin))
+        
+            self.guide1h.setPos(QPointF(LicLayout.PageDefaultMargin , LicLayout.PageDefaultMargin))
+            self.guide2h.setPos(QPointF(LicLayout.PageDefaultMargin , self.height() -LicLayout.PageDefaultMargin))
+            for g in self._staticGuides:
+                g.show()
+            
+        self.hasMargins = not self.hasMargins           
+            
     def maximizeGuides(self, width, height):
         for guide in self.guides:
             if guide.orientation == LicLayout.Vertical and height > 0:
@@ -431,20 +496,21 @@ class LicGraphicsScene(QGraphicsScene):
                 itemDict[guide] = [guidePt.x(), guidePt.y()]
 
         if self.snapToItems:
-            for pageItem in item.getPage().getAllChildItems():
-                if isinstance(pageItem, Step):
-                    continue
-                if item.isAncestorOf(pageItem):
-                    continue
-                if pageItem is item:
-                    continue
-                itemDict[pageItem] = pageItem.getSceneCornerList()
-                
-                if isinstance(pageItem, Page):  # Bump page points inwards so we snap to margin, not outside edge
-                    itemDict[pageItem][0] += margin
-                    itemDict[pageItem][1] += margin
-                    itemDict[pageItem][2] -= margin
-                    itemDict[pageItem][3] -= margin
+            if item and isinstance(item, (Page,Submodel)):
+                for pageItem in item.getPage().getAllChildItems():
+                    if isinstance(pageItem, Step):
+                        continue
+                    if item.isAncestorOf(pageItem):
+                        continue
+                    if pageItem is item:
+                        continue
+                    itemDict[pageItem] = pageItem.getSceneCornerList()
+                    
+                    if isinstance(pageItem, Page):  # Bump page points inwards so we snap to margin, not outside edge
+                        itemDict[pageItem][0] += margin
+                        itemDict[pageItem][1] += margin
+                        itemDict[pageItem][2] -= margin
+                        itemDict[pageItem][3] -= margin
 
         if not itemDict:
             return  # Nothing to snap to
@@ -521,7 +587,9 @@ class LicGraphicsScene(QGraphicsScene):
             self.ySnapLine.show()   
       
     def mouseReleaseEvent(self, event):
-
+        if self.catchTheMouse:
+            # Need to correctly handling sceneClick signal on press event 
+            return
         # Need to compare the selection list before and after selection, to deselect any selected parts
         parts = []
         for item in self.selectedItems():
@@ -537,8 +605,34 @@ class LicGraphicsScene(QGraphicsScene):
 
         self.emit(SIGNAL("sceneClick"))
         
-    def mousePressEvent(self, event):
+    def mouseMoveEvent(self, event):
+        eventPos = event.scenePos()
+        if self.catchTheMouse:
+            if [] == self._crossGuides:
+                hor = FixedGuide(LicLayout.Horizontal , self)
+                ver = FixedGuide(LicLayout.Vertical , self)
+                hor_2 = FixedGuide(LicLayout.Horizontal , self)
+                ver_2 = FixedGuide(LicLayout.Vertical , self)
+                self._crossGuides.append(hor)
+                self._crossGuides.append(ver)
+                self._crossGuides.append(hor_2)
+                self._crossGuides.append(ver_2)
+            self._crossGuides[0].setPos(eventPos)    
+            self._crossGuides[1].setPos(eventPos)    
+            self._crossGuides[2].setPos(LicLayout.PageDefaultMargin , eventPos.y())    
+            self._crossGuides[3].setPos(eventPos.x(), LicLayout.PageDefaultMargin)    
+            return
+        elif [] != self._crossGuides:
+            for guide in self._crossGuides:
+                self.removeItem(guide)
+            self._crossGuides = []
+            
+        return QGraphicsScene.mouseMoveEvent(self, event)    
         
+    def mousePressEvent(self, event):
+        if self.catchTheMouse:
+            self.emit(SIGNAL("sceneClick"), event)
+            return
         # Need to compare the selection list before and after selection, to deselect any selected parts
         parts = []
         for item in self.selectedItems():
@@ -574,6 +668,11 @@ class LicGraphicsScene(QGraphicsScene):
             return  # No pages = nothing to do here
 
         for item in self.selectedItems():
+            # On Template Page, igNOre event so all page elements can't move
+            if isinstance(item, QGraphicsItem) and item.flags().__int__() == NoMoveFlags.__int__ ():
+                event.ignore()
+                return
+            # Part class haVE own event
             if isinstance(item, Part):
                 item.keyReleaseEvent(event)
                 return
@@ -619,6 +718,36 @@ class LicGraphicsScene(QGraphicsScene):
             self.emit(SIGNAL("itemsMoved"), movedItems)
         event.accept()
 
+class FixedGuide(QGraphicsLineItem):
+    
+    def __init__(self, orientation, scene):
+        QGraphicsItem.__init__(self, None, scene)
+        self.orientation = orientation
+        self.setFlags(NoFlags)
+        
+        sceneRect = scene.sceneRect()        
+        length = sceneRect.width() if orientation == LicLayout.Horizontal else sceneRect.height()
+        if orientation == LicLayout.Vertical:
+            self.setLine(1, 1, 1, length-1)
+        if orientation == LicLayout.Horizontal:
+            self.setLine(1, 1, length-1, 1)
+        
+        self.setPen(QPen(QBrush(QColor(Qt.black) ,Qt.CrossPattern ), 3.0))  # Black , 2.0 thick ,Cross pattern
+        self.setZValue(10000)  # Put on top of everything else
+        
+    def setPos(self, *args, **kwargs):
+        if self.scene():
+            x = args[0][0] if isinstance(args[0], (QPoint,QPointF)) else args[0]
+            y = args[0][1] if isinstance(args[0], (QPoint,QPointF)) else args[1]
+            line = self.line()
+            length = self.scene().width() if self.orientation == LicLayout.Horizontal else self.scene().height()
+            cord = x if self.orientation == LicLayout.Horizontal else y
+            
+            line.setLength(length -cord -LicLayout.PageDefaultMargin)
+            self.setLine(line)
+        return QGraphicsLineItem.setPos(self, *args, **kwargs)
+                
+
 class Guide(QGraphicsLineItem):
     
     extends = 500
@@ -628,8 +757,7 @@ class Guide(QGraphicsLineItem):
         
         self.orientation = orientation
         self.setFlags(AllFlags)
-        self.setPen(QPen(QColor(0, 0, 255, 128)))  # Blue 1/2 transparent
-        #self.setPen(QPen(QBrush(QColor(0, 0, 255, 128)), 1.5))  # Blue 1/2 transparent, 1.5 thick
+        self.setPen(QPen(QBrush(QColor(0, 0, 255, 128)), 1.5))  # Blue 1/2 transparent, 1.5 thick
         self.setZValue(10000)  # Put on top of everything else
 
         dx = scene.views()[0].horizontalScrollBar().value()
@@ -642,12 +770,12 @@ class Guide(QGraphicsLineItem):
 
         if orientation == LicLayout.Horizontal:
             self.setCursor(Qt.SplitVCursor)
-            self.setPos(0, y)
-            self.setLine(-Guide.extends, 0, length + Guide.extends, 0)
+            self.setPos(1, y)
+            self.setLine(-Guide.extends, 1, length + Guide.extends, 1)
         else:
             self.setCursor(Qt.SplitHCursor)
-            self.setPos(x, 0)
-            self.setLine(0, -Guide.extends, 0, length + Guide.extends)
+            self.setPos(x, 1)
+            self.setLine(1, -Guide.extends, 1, length + Guide.extends)
 
     def setLength(self, length):
         line = self.line()
@@ -663,3 +791,5 @@ class Guide(QGraphicsLineItem):
             y = self.pos().y()
             QGraphicsLineItem.mouseMoveEvent(self, event)
             self.setPos(self.pos().x(), y)
+            
+            

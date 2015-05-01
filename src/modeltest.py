@@ -21,8 +21,9 @@
 ##
 #############################################################################
 
-import sip
 from PyQt4 import QtCore, QtGui
+import sip
+
 
 class ModelTest(QtCore.QObject):
     def __init__(self, _model, parent):

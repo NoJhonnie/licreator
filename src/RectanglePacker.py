@@ -12,7 +12,8 @@ You should have received a copy of the IBM Common Public
 License along with this library
 """
 from bisect import bisect_left
- 
+
+
 class OutOfSpaceError(Exception): pass
  
 class Point(object):

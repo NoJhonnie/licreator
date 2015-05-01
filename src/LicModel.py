@@ -19,41 +19,37 @@
     along with this program.  If not, see http://www.gnu.org/licenses/
 """
 
-import math   # for sqrt
-import os     # for output path creation
-import time
+import collections
+import math  # for sqrt
+import os  # for output path creation
+import config  # For user path info
+
 import Image
-from LicHelpers import LicColor
-
-#import OpenGL
-#OpenGL.ERROR_CHECKING = False
-#OpenGL.ERROR_LOGGING = False
-
 from OpenGL import GL
 from OpenGL import GLU
-
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from PyQt4.QtOpenGL import *
 
-from LicUndoActions import *
-from LicTreeModel import *
-from LicQtWrapper import *
-from LicLayout import *
-
-import LicGLHelpers
-import LicL3PWrapper
-import LicPovrayWrapper
-import LicHelpers
 import LicDialogs
-import LicPartLengths
+import LicGLHelpers
+import LicHelpers
 import LicImporters
-from LicImporters import LDrawImporter
+import LicL3PWrapper
+from LicLayout import *
+import LicPartLengths
+import LicPovrayWrapper
+from LicQtWrapper import *
+from LicTreeModel import *
+from LicUndoActions import *
+import LicUndoActions
 
-import config     # For user path info
 
+#import OpenGL
+#OpenGL.ERROR_CHECKING = False
+#OpenGL.ERROR_LOGGING = False
 MagicNumber = 0x14768126
-FileVersion = 15
+FileVersion = 18
 
 NoFlags = QGraphicsItem.GraphicsItemFlags()
 NoMoveFlags = QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemIsFocusable
@@ -127,7 +123,7 @@ class CalloutArrow(CalloutArrowTreeManager, QGraphicsRectItem):
         self.tipRect = CalloutArrowEndItem(self, 32, 32, "Arrow Tip", 0)
         self.baseRect = CalloutArrowEndItem(self, 20, 20, "Arrow Base", 1)
         
-        # TODO: Add ability to add and drag around arbitrary points to Callout arrow
+        #TODO: Add ability to add and drag around arbitrary points to Callout arrow
         self.internalPoints = []
 
     def initializeEndPoints(self):
@@ -399,7 +395,7 @@ class Callout(CalloutTreeManager, GraphicsRoundRectItem):
                 step.parentItem().initLayout()
 
     def getArrowBasePoint(self, side):
-        # TODO: arrow base should come out of last step in callout
+        #TODO: arrow base should come out of last step in callout
         r = self.rect()
         if side == 'right':
             return r.topRight() + QPointF(0.0, r.height() / 2.0)
@@ -742,6 +738,7 @@ class Step(StepTreeManager, QGraphicsRectItem):
         self.rotateIcon = None
         
         self.maxRect = None
+        self.newRect = None
 
         self.setPen(QPen(Qt.NoPen))
         self.setPos(self.getPage().margin)
@@ -820,6 +817,28 @@ class Step(StepTreeManager, QGraphicsRectItem):
         self.parentItem().children.remove(self)
         page.addStep(self)
 
+    def setNewRect(self, ePos):
+            rect = self.rect().translated(self.pos())
+            x, y = ePos
+            w, h = x - rect.width(), y - rect.height()
+
+            if self.edge == "left":
+                self.newRect = rect.adjusted(x, 0, 0, 0)
+            elif self.edge == "top":
+                self.newRect = rect.adjusted(0, y, 0, 0)
+            elif self.edge == "right":
+                self.newRect = rect.adjusted(0, 0, w, 0)
+            elif self.edge == "bottom":
+                self.newRect = rect.adjusted(0, 0, 0, h)
+            elif self.edge == "topLeft":
+                self.newRect = rect.adjusted(x, y, 0, 0)
+            elif self.edge == "topRight":
+                self.newRect = rect.adjusted(0, y, w, 0)
+            elif self.edge == "bottomLeft":
+                self.newRect = rect.adjusted(x, 0, 0, h)
+            elif self.edge == "bottomRight":
+                self.newRect = rect.adjusted(0, 0, w, h)
+                    
     def resetRect(self):
         if self.maxRect:
             r = QRectF(0.0, 0.0, max(1, self.maxRect.width()), max(1, self.maxRect.height()))
@@ -1035,32 +1054,15 @@ class Step(StepTreeManager, QGraphicsRectItem):
 
     def mouseMoveEvent(self, event):
         if self.hasCursor():  # This is a resize move event
-            rect = self.rect().translated(self.pos())
-            x, y = event.pos()
-            w, h = x - rect.width(), y - rect.height()
-
-            if self.edge == "left":
-                self.newRect = rect.adjusted(x, 0, 0, 0)
-            elif self.edge == "top":
-                self.newRect = rect.adjusted(0, y, 0, 0)
-            elif self.edge == "right":
-                self.newRect = rect.adjusted(0, 0, w, 0)
-            elif self.edge == "bottom":
-                self.newRect = rect.adjusted(0, 0, 0, h)
-            elif self.edge == "topLeft":
-                self.newRect = rect.adjusted(x, y, 0, 0)
-            elif self.edge == "topRight":
-                self.newRect = rect.adjusted(0, y, w, 0)
-            elif self.edge == "bottomLeft":
-                self.newRect = rect.adjusted(x, 0, 0, h)
-            elif self.edge == "bottomRight":
-                self.newRect = rect.adjusted(0, 0, w, h)
+            self.setNewRect(event.pos())
             self.initLayout(self.newRect)
         else:
             QGraphicsRectItem.mouseMoveEvent(self, event)
 
     def mouseReleaseEvent(self, event):
         if self.hasCursor():  # This is a resize move event
+            if not self.newRect:
+                self.setNewRect(event.pos())
             self.scene().undoStack.push(ResizeCommand(self, self.oldRect, self.newRect))
         else:
             QGraphicsRectItem.mouseReleaseEvent(self, event)
@@ -1204,11 +1206,12 @@ class SubmodelPreview(SubmodelPreviewTreeManager, GraphicsRoundRectItem, RotateS
         self.rotation = [0.0, 0.0, 0.0]
         self.scaling = 1.0
         self.setFlags(AllFlags)
-        self.pli = None             # TODO: Need to support both sub-model pic and sub-assembly PLI
-        self.isSubAssembly = False  # TODO: Need to include main step number under this sub-assembly drawing
+        self.pli = None             #TODO: Need to support both sub-model pic and sub-assembly PLI
+        self.isSubAssembly = False  #TODO: Need to include main step number under this sub-assembly drawing
         self.numberItem = None
         self.quantity = 0
 
+        self._margin = LicLayout.PageDefaultMargin
         self.setAbstractPart(abstractPart)
 
     def resetPixmap(self):
@@ -1230,6 +1233,18 @@ class SubmodelPreview(SubmodelPreviewTreeManager, GraphicsRoundRectItem, RotateS
                 numRect.adjust(0, 0, PLI.margin.x(), PLI.margin.y())
                 self.setRect(self.rect() | numRect)
     
+    def adjustRectSignal(self):
+        parentWidget = self.scene().views()[0]
+        dialog = LicDialogs.AdjustAreaDialog(parentWidget, self.rect().toRect() ,self.scenePos())
+        parentWidget.connect(dialog, SIGNAL("changeRect"), self.changeRect)   
+        dialog.show()
+    
+    def changeRect(self,newRect):
+        self.setRect(QRectF( newRect ))
+        
+    def acceptRect(self):
+        self.oldPos = self.pos()
+    
     def setAbstractPart(self, part):
         self.abstractPart = part.duplicate()
         self.resetRect()
@@ -1247,6 +1262,40 @@ class SubmodelPreview(SubmodelPreviewTreeManager, GraphicsRoundRectItem, RotateS
             self.numberItem.setPos(self.abstractPart.width, self.abstractPart.height)
             self.numberItem.moveBy(PLI.margin.x(), PLI.margin.y())
             self.resetRect()
+
+    def moveTo(self, align = Qt.AlignLeft):
+        pw, ph = self.parent().PageSize
+        ptF = QPointF()
+        self.oldPos = self.pos()
+        # Qt.AlignLeft
+        if align == Qt.AlignLeft:
+            y= self.parent().y() +self._margin
+            ptF= QPointF(self._margin,y)
+            self.setPos(ptF)
+            x = self.sceneBoundingRect().x()
+            y = self.sceneBoundingRect().y()
+            
+            if x < self._margin:
+                self.moveBy(abs(x)-self._margin,0)
+            if y < self._margin:
+                self.moveBy(0,abs(y)-self._margin)
+            x = self.sceneBoundingRect().x()
+            y = self.sceneBoundingRect().y()
+            
+            if x < self._margin or y < self._margin:
+                while not x > self._margin:
+                    x += self._margin
+                while not y > self._margin:
+                    y += self._margin
+                self.moveBy(x,y)
+        # Qt.AlignCenter        
+        if align == Qt.AlignCenter and self.parent():
+            halfx = pw/2 - self.boundingRect().width()/2
+            halfy = ph/2 - self.boundingRect().height()/2
+            ptF = QPointF(halfx,halfy)
+            self.setPos(ptF)
+        if not ptF.isNull():
+            self.scene().undoStack.push(LicUndoActions.MoveCommand([self]))
 
     def convertToSubAssembly(self):
         self.scene().emit(SIGNAL("layoutAboutToBeChanged()"))
@@ -1291,6 +1340,11 @@ class SubmodelPreview(SubmodelPreviewTreeManager, GraphicsRoundRectItem, RotateS
         menu = QMenu(self.scene().views()[0])
         menu.addAction("Rotate Submodel Image", self.rotateSignal)
         menu.addAction("Scale Submodel Image", self.scaleSignal)
+        menu.addSeparator()
+        menu.addAction("Move in left-right corner on scene", self.moveTo)
+        menu.addAction("Move on centre of scene", lambda: self.moveTo(Qt.AlignCenter))
+        menu.addSeparator()
+        menu.addAction("Adjust View", self.adjustRectSignal)
         menu.exec_(event.screenPos())
     
 class PLIItem(PLIItemTreeManager, QGraphicsRectItem, RotateScaleSignalItem):
@@ -1314,6 +1368,14 @@ class PLIItem(PLIItemTreeManager, QGraphicsRectItem, RotateScaleSignalItem):
         self.numberItem.setFont(QFont("Arial", 10))
         self.numberItem.setFlags(AllFlags)
         self.setQuantity(quantity)
+        
+        # Initialize the design|element number label (position set in initLayout)
+        self.codeItem = QGraphicsSimpleTextItem("",self)
+        self.codeItem.itemClassName = "PLIItem Code"
+        self.codeItem._row = 1
+        self.codeItem.setFont(QFont("Arial", 10))
+        self.codeItem.setFlags(AllFlags)
+        self.codeItem.data = lambda index: "Label"
 
         # Initialize the circular length indicator, if there should be one on this part
         self.lengthIndicator = None
@@ -1343,6 +1405,9 @@ class PLIItem(PLIItemTreeManager, QGraphicsRectItem, RotateScaleSignalItem):
         self.quantity = quantity
         self.numberItem.setText("%dx" % self.quantity)
         self.numberItem.data = lambda index: "Qty. Label (%dx)" % self.quantity
+    
+    def setCode(self, code):
+        self.codeItem.setText(code)
         
     def addPart(self):
         self.setQuantity(self.quantity + 1)
@@ -1353,7 +1418,8 @@ class PLIItem(PLIItemTreeManager, QGraphicsRectItem, RotateScaleSignalItem):
         self.numberItem.data = lambda index: "Qty. Label (%dx)" % self.quantity
 
     def resetRect(self):
-        glRect = QRectF(0.0, 0.0, self.abstractPart.width, self.abstractPart.height)
+        lblHeight = self.numberItem.rect().height()
+        glRect = QRectF(0.0, 0.0, self.abstractPart.width, self.abstractPart.height +lblHeight)
         self.setRect(self.childrenBoundingRect() | glRect)
         #self.normalizePosition()  # Don't want to normalize PLIItem positions, otherwise we end up with GLItem in top left always.
         self.parentItem().resetRect()
@@ -1365,6 +1431,7 @@ class PLIItem(PLIItemTreeManager, QGraphicsRectItem, RotateScaleSignalItem):
         # Put label directly below part, left sides aligned
         # Label's implicit lower top right corner (from qty 'x'), means no padding needed
         self.numberItem.setPos(0.0, part.height)  
+        self.codeItem.setPos(0.0, part.height)
        
         lblWidth = self.numberItem.rect().width()
         lblHeight = self.numberItem.rect().height()
@@ -1380,6 +1447,8 @@ class PLIItem(PLIItemTreeManager, QGraphicsRectItem, RotateScaleSignalItem):
         if self.lengthIndicator:
             self.lengthIndicator.setPos(self.abstractPart.width, -self.lengthIndicator.rect().height())
 
+        nPos = self.numberItem.pos()
+        self.codeItem.setPos(nPos.x(), nPos.y()+lblHeight)
         glRect = QRectF(0.0, 0.0, self.abstractPart.width, self.abstractPart.height)
         self.setRect(self.childrenBoundingRect() | glRect)
 
@@ -1389,16 +1458,14 @@ class PLIItem(PLIItemTreeManager, QGraphicsRectItem, RotateScaleSignalItem):
         dy = -self.getPage().PageSize.height() + pos.y() + (self.abstractPart.height / 2.0)
         self.abstractPart.paintGL(dx * f, dy * f, scaling = f, color = self.color)
 
-    """
-    def paint(self, painter, option, widget = None):
-        QGraphicsRectItem.paint(self, painter, option, widget)
-        painter.drawRect(self.boundingRect())
-    """
-
     def resetPixmap(self):
         glContext = self.getPage().instructions.glContext
         self.abstractPart.resetPixmap(glContext)
         self.parentItem().initLayout()
+        
+    def normalizeView(self):
+        self.initLayout()
+        self.resetRect()
         
     def createPng(self):
 
@@ -1429,6 +1496,8 @@ class PLIItem(PLIItemTreeManager, QGraphicsRectItem, RotateScaleSignalItem):
         menu = QMenu(self.scene().views()[0])
         menu.addAction("Rotate PLI Item", self.rotateSignal)
         menu.addAction("Scale PLI Item", self.scaleSignal)
+        menu.addSeparator()
+        menu.addAction("normalize View",self.normalizeView)
         menu.exec_(event.screenPos())
 
 class PLI(PLITreeManager, GraphicsRoundRectItem):
@@ -1513,8 +1582,8 @@ class PLI(PLITreeManager, GraphicsRoundRectItem):
             return
 
         # Initialize each item in this PLI, so they have good rects and properly positioned quantity labels
-        for item in self.pliItems:
-            item.initLayout()
+#         for item in self.pliItems:
+#             item.initLayout()
 
         # Sort list of parts to lay out first by color (in reverse order) 
         # ,then by width (narrowest first) 
@@ -1528,31 +1597,6 @@ class PLI(PLITreeManager, GraphicsRoundRectItem):
         tallestPart = max(reversed(partList), key = lambda x: x.abstractPart.height)
         partList.remove(tallestPart)
         partList.append(tallestPart)
-
-        """
-        # Try rectangle packer instead
-        from RectanglePacker import CygonRectanglePacker
-
-        mx = self.margin.x()
-        mx2 = mx * 2.0
-        my = self.margin.y()
-        my2 = my * 2.0
-        rMaxWidth = self.parentItem().rect().width() / 2.0
-        rMaxHeight = (tallestPart.rect().height() * 1.5) + my2
-        rectanglePacker = CygonRectanglePacker(rMaxWidth, rMaxHeight)
-        
-        for pliItem in partList:
-            point = rectanglePacker.Pack(pliItem.rect().width() + mx, pliItem.rect().height() + my)
-            if point:
-                pliItem.setPos(point.x + self.margin.x(), point.y + self.margin.y())
-            else:
-                print "PLIItem doesn't fit!!!  DOOM!!!"
-                
-        rect = self.childrenBoundingRect().adjusted(-PLI.margin.x(), -PLI.margin.y(), PLI.margin.x(), PLI.margin.y())
-        self.setRect(rect)
-        
-        return
-        """
     
         # This rect will be enlarged as needed
         pliBox = QRectF(0, 0, -1, -1)
@@ -1652,7 +1696,10 @@ class CSI(CSITreeManager, QGraphicsRectItem, RotateScaleSignalItem):
         return partCount
     
     def data(self, index):
-        return "CSI - %d parts" % self.partCount()
+        if index in [Qt.WhatsThisRole,Qt.AccessibleTextRole]:
+            return self.__class__.__name__
+        else:        
+            return "CSI - %d parts" % self.partCount()
 
     def paintGL(self, f = 1.0):
         """ 
@@ -1740,9 +1787,10 @@ class CSI(CSITreeManager, QGraphicsRectItem, RotateScaleSignalItem):
             self.setRect(QRectF())
             self.glDispID = LicGLHelpers.UNINIT_GL_DISPID
             return  # No parts = reset pixmap
-
+        
         # Temporarily enlarge CSI, in case recent changes pushed image out of existing bounds.
         oldWidth, oldHeight = self.rect().width(), self.rect().height()
+        oldRect = self.rect()
         self.setRect(0.0, 0.0, self.getPage().PageSize.width(), self.getPage().PageSize.height())
 
         glContext = self.getPage().instructions.glContext
@@ -1766,6 +1814,9 @@ class CSI(CSITreeManager, QGraphicsRectItem, RotateScaleSignalItem):
         self.isDirty = False
 
         glContext.makeCurrent()
+        
+        # Restore
+        self.setRect(oldRect)
 
     def initSize(self, size, pBuffer):
         """
@@ -1784,6 +1835,7 @@ class CSI(CSITreeManager, QGraphicsRectItem, RotateScaleSignalItem):
 
         if self.glDispID == LicGLHelpers.UNINIT_GL_DISPID:
             print "ERROR: Trying to init a CSI size that has no display list"
+            LicHelpers.writeLogEntry("Trying to initialize a CSI size that has no display list", self.__class__.__name__)
             return False
         
         pageNumber, stepNumber = self.getPageStepNumberPair()
@@ -1862,7 +1914,8 @@ class CSI(CSITreeManager, QGraphicsRectItem, RotateScaleSignalItem):
         menu.addSeparator()
         arrowMenu = menu.addMenu("Select Part")
         for part in self.getPartList():
-            text = "%s - %s" % (part.abstractPart.name, part.color.name)
+            colorName = part.color.name if part.color else "Unnamed"         
+            text = "%s - %s" % (part.abstractPart.name, colorName)
             arrowMenu.addAction(text, lambda p = part: self.selectPart(p))
         arrowMenu.addAction("Select All", self.selectAllParts)
 
@@ -1983,6 +2036,9 @@ class AbstractPart(object):
         self.leftInset = self.bottomInset = -1
         self.center = QPointF()
 
+    def design(self):
+        return LicHelpers.determinePartCode(os.path.splitext(self.filename)[0])
+    
     def duplicate(self):
         newPart = AbstractPart(self.filename)
         newPart.invertNext = self.invertNext
@@ -2068,7 +2124,8 @@ class AbstractPart(object):
             False if the part has been rendered partially or wholly out of frame.
         """
 
-        # TODO: If a part is rendered at a size > 256, draw it smaller in the PLI - this sounds like a great way to know when to shrink a PLI image...
+        #TODO: If a part is rendered at a size > 256, draw it smaller in the PLI
+        # - this sounds like a great way to know when to shrink a PLI image...
         rotation = SubmodelPreview.defaultRotation if self.isSubmodel else PLI.defaultRotation
         scaling = SubmodelPreview.defaultScale if self.isSubmodel else PLI.defaultScale
         params = LicGLHelpers.initImgSize(size, self.glDispID, self.filename, scaling * extraScale, rotation, extraRotation)
@@ -2143,7 +2200,6 @@ class BoundingBox(object):
         self.z1 = self.z2 = z
 
     def __str__(self):
-        #return "x1: %.2f, x2: %.2f,  y1: %.2f, y2: %.2f,  z1: %.2f, z2: %.2f" % (self.x1, self.x2, self.y1, self.y2, self.z1, self.z2)
         return "%.0f %.0f | %.0f %.0f | %.0f %.0f" % (self.x1, self.x2, self.y1, self.y2, self.z1, self.z2)
     
     def duplicate(self, matrix = None):
@@ -2434,7 +2490,7 @@ class Submodel(SubmodelTreeManager, AbstractPart):
         for s in [p for p in self.submodels if p._row > row]:
             s._row -= 1
      
-    # TODO: co-opt this so it's used by Importers to add new Submodels
+    #TODO: co-opt this so it's used by Importers to add new Submodels
     def addSubmodel(self, submodel): 
         # Assume Submodel already exists as a Part on an appropriate Step
 
@@ -2714,7 +2770,7 @@ class Submodel(SubmodelTreeManager, AbstractPart):
 
     def createPng(self):
 
-        datFile = os.path.join(config.datCachePath(), self.filename)
+        datFile = os.path.join(config.datCachePath(), os.path.basename(self.filename))
         if not os.path.isfile(datFile):
             fh = open(datFile, 'w')
             for part in self.parts:
@@ -2744,7 +2800,7 @@ class Submodel(SubmodelTreeManager, AbstractPart):
         else:
             menu.addAction("Change Submodel to Callout", self.convertToCalloutSignal)
             menu.addAction("Change Submodel to Sub Assembly", self.convertToSubAssemblySignal)
-        menu.addAction("Remove all Pages & Steps", self.removeAllPagesAndSteps)
+        menu.addAction("Remove Pages and Steps", self.removeAllPagesAndSteps)
 
         selectedSubmodels = list(self.instructions.scene.selectedSubmodels)
         if len(selectedSubmodels) == 2 and self in selectedSubmodels:
@@ -2778,7 +2834,7 @@ class Submodel(SubmodelTreeManager, AbstractPart):
         self.pages[0].scene().undoStack.push(SubmodelToFromSubAssembly(self, False))
 
 class Mainmodel(MainModelTreeManager, Submodel):
-    """ A MainModel is a Submodel plus a template, title & part list pages. It's used as the root of a tree mdoel. """
+    """ A MainModel is a Submodel plus a template, title & part list pages. It's used as the root of a tree model. """
     itemClassName = "Mainmodel"
 
     def __init__(self, parent = None, instructions = None, filename = ""):
@@ -2789,7 +2845,7 @@ class Mainmodel(MainModelTreeManager, Submodel):
         self._hasTitlePage = False
         self.titlePage = None
 
-        # TODO: Implement mainModel.hasPartListPages so user can show / hide part list pages, like title pages
+        #TODO: Implement mainModel.hasPartListPages so user can show / hide part list pages, like title pages
         self.hasPartListPages = False  
         self.partListPages = []
 
@@ -2929,9 +2985,6 @@ class Part(PartTreeManager, QGraphicsRectItem):
         self.originalPart = None
         self.arrows = []
 
-        #self.setPos(0.0, 0.0)
-        #self.setRect(0.0, 0.0, 30.0, 30.0)
-        #self.setPen(QPen(Qt.black))
         self.setFlags(NoMoveFlags)
 
     def initializeAbstractPart(self, instructions):
@@ -2964,7 +3017,6 @@ class Part(PartTreeManager, QGraphicsRectItem):
         b = self.getPartBoundingBox()
         return (-b.y1, b.ySize(), -b.z1, b.x1)
 
-    # FIXME: AttributeError: 'NoneType' object has no attribute 'duplicate'
     def getPartBoundingBox(self):
         m = list(self.matrix)
         if self.displacement:
@@ -2972,7 +3024,10 @@ class Part(PartTreeManager, QGraphicsRectItem):
             m[13] += self.displacement[1]
             m[14] += self.displacement[2]
 
-        return self.abstractPart.getBoundingBox().duplicate(m)
+        box = self.abstractPart.getBoundingBox()
+        if box:
+            return box.duplicate(m)
+        return BoundingBox(self.xyz()[0] , self.xyz()[1] , self.xyz()[2]).duplicate(m)
     
     def xyz(self):
         return [self.matrix[12], self.matrix[13], self.matrix[14]]
@@ -3068,7 +3123,7 @@ class Part(PartTreeManager, QGraphicsRectItem):
         self.displacement = LicHelpers.getDisplacementOffset(direction, True, self.abstractPart.getBoundingBox())
         self.addNewArrow(direction)
         self._dataString = None
-
+        
     def addNewArrow(self, direction):
         arrow = Arrow(direction, self)
         arrow.setPosition(*LicHelpers.GLMatrixToXYZ(self.matrix))
@@ -3095,7 +3150,8 @@ class Part(PartTreeManager, QGraphicsRectItem):
             if useDisplacement and self.isSelected():
                 color[3] = 0.5
             GL.glPushAttrib(GL.GL_CURRENT_BIT)
-            GL.glColor4fv(color)
+            if isinstance(color, collections.Iterable):
+                GL.glColor4fv(color)
 
         if self.inverted:
             GL.glPushAttrib(GL.GL_POLYGON_BIT)
@@ -3163,7 +3219,8 @@ class Part(PartTreeManager, QGraphicsRectItem):
         fh.write(line)
 
     def duplicate(self):
-        p = Part(self.filename, self.color.duplicate(), list(self.matrix), self.inverted)
+        color = self.color.duplicate() if self.color else LicColor.black()
+        p = Part(self.filename, color, list(self.matrix), self.inverted)
         p.abstractPart = self.abstractPart
         p.setParentItem(self.parentItem())
         p.displacement = list(self.displacement)
@@ -3208,17 +3265,20 @@ class Part(PartTreeManager, QGraphicsRectItem):
             menu.addAction("Move to &Next Step", lambda: self.moveToStepSignal(step.getNextStep()))
             needSeparator = True
 
+        if isinstance(event,QGraphicsSceneContextMenuEvent) and not self.calloutPart:
+                menu.addAction("Mark to Move", lambda: self.scene().markToMove(self))
+        
         if needSeparator:
             menu.addSeparator()
 
         if self.displacement:
-            #menu.addAction("&Increase displacement", lambda: self.displaceSignal(self.displaceDirection))
-            #menu.addAction("&Decrease displacement", lambda: self.displaceSignal(LicHelpers.getOppositeDirection(self.displaceDirection)))
+            menu.addAction("&Increase displacement", lambda: self.displaceSignal(self.displaceDirection))
+            menu.addAction("&Decrease displacement", lambda: self.displaceSignal(LicHelpers.getOppositeDirection(self.displaceDirection)))
             menu.addAction("&Change displacement", self.adjustDisplaceSignal)
             menu.addAction("&Remove displacement", lambda: self.displaceSignal(None))
             menu.addAction("&Add Arrow", self.addArrowSignal)
         else:
-            arrowMenu = menu.addMenu("Displace With &Arrow")
+            arrowMenu = menu.addMenu("Displace with &Arrow")
             arrowMenu.addAction("Move Up", lambda: self.displacePartsSignal(Qt.Key_PageUp))
             arrowMenu.addAction("Move Down", lambda: self.displacePartsSignal(Qt.Key_PageDown))
             arrowMenu.addAction("Move Forward", lambda: self.displacePartsSignal(Qt.Key_Down))
@@ -3281,6 +3341,7 @@ class Part(PartTreeManager, QGraphicsRectItem):
             return self.displaceSignal(LicHelpers.getOppositeDirection(self.displaceDirection))
 
     def displaceSignal(self, direction):
+        backupPos = self.getCSI().pos()
         stack = self.scene().undoStack
         if direction:
             displacement = LicHelpers.getDisplacementOffset(direction, False, self.abstractPart.getBoundingBox())
@@ -3296,10 +3357,12 @@ class Part(PartTreeManager, QGraphicsRectItem):
             for arrow in self.arrows:
                 stack.push(AdjustArrowLength(arrow, arrow.getLength(), newLength))
 
+            self.getCSI().setPos(backupPos)
             stack.endMacro()
         else:
             # Remove any displacement
             stack.push(BeginEndDisplacementCommand(self, self.displaceDirection, end = True))
+        
 
     def addArrowSignal(self):
         self.addNewArrow(self.displaceDirection)
@@ -3334,7 +3397,7 @@ class Part(PartTreeManager, QGraphicsRectItem):
             for arrow in self.arrows:
                 self.scene().undoStack.push(AdjustArrowLength(arrow, oldLength, arrow.getLength()))
             stack.endMacro()
-
+    
     def moveToStepSignal(self, destStep):
         scene = self.scene()
         stack = scene.undoStack
@@ -3484,8 +3547,11 @@ class Arrow(Part):
         self.abstractPart.createGLDisplayList()
 
     def data(self, index):
-        x, y, z = LicHelpers.GLMatrixToXYZ(self.matrix)
-        return "%s  (%.1f, %.1f, %.1f)" % (self.abstractPart.filename, x, y, z)
+        if index in [Qt.WhatsThisRole,Qt.AccessibleTextRole]:
+            return self.__class__.__name__
+        else:        
+            x, y, z = LicHelpers.GLMatrixToXYZ(self.matrix)
+            return "%s  (%.1f, %.1f, %.1f)" % (self.abstractPart.filename, x, y, z)
 
     def duplicate(self, parentPart = None):
         p = Arrow(self.displaceDirection, parentPart)
@@ -3609,11 +3675,6 @@ class Arrow(Part):
 
         menu = QMenu(self.scene().views()[0])
         
-        #stack = self.scene().undoStack
-        #menu.addAction("Move &Forward", lambda: self.displaceSignal(LicHelpers.getOppositeDirection(self.displaceDirection)))
-        #menu.addAction("Move &Back", lambda: self.displaceSignal(self.displaceDirection))
-        #menu.addAction("&Longer", lambda: stack.push(AdjustArrowLength(self, 20)))
-        #menu.addAction("&Shorter", lambda: stack.push(AdjustArrowLength(self, -20)))
         menu.addAction("&Change Position and Length", self.adjustDisplaceSignal)
         menu.addAction("&Remove", self.removeSignal)
         menu.exec_(event.screenPos())
@@ -3797,3 +3858,38 @@ class Primitive(object):
         GL.glVertex3f(p[3], p[4], p[5])
         GL.glEnd()
         GL.glPopAttrib()
+
+class Ruler(QWidget):
+    
+    _step = 20.0
+    _inc  = 10.0 
+    
+    def __init__(self, orientation, view=None):
+        QWidget.__init__(self, view)
+        self.orientation = orientation
+        wt = LicLayout.PageDefaultMargin
+        ht = LicLayout.PageDefaultMargin
+        xx = 1 if orientation == Qt.Vertical else LicLayout.PageDefaultMargin 
+        yy = 1 if orientation == Qt.Horizontal else LicLayout.PageDefaultMargin
+        if view:
+            wt = view.width() if orientation == Qt.Horizontal else LicLayout.PageDefaultMargin
+            ht = view.height() if orientation == Qt.Vertical else LicLayout.PageDefaultMargin
+        
+        self.setGeometry(xx,yy,wt,ht)
+
+    def paintEvent(self,event):
+        # prepare canvas
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(LicHelpers.SUBWINDOW_BACKGROUND))
+        # variables     
+        nStep = 80
+        # actions     
+        painter.setPen(QPen(Qt.lightGray, 2.0))
+        for m in range(1,nStep):
+            if self.orientation == Qt.Vertical:
+                painter.drawLine ( 1 ,m*self._step ,self.width()-1 , m*self._step )
+                painter.drawLine ( 1 ,m*self._step-self._inc ,self.width()-1-self._inc , m*self._step-self._inc )
+            else:
+                painter.drawLine ( m*self._step ,1 ,m*self._step ,self.height()-1 )
+                painter.drawLine ( m*self._step-self._inc ,1 ,m*self._step-self._inc ,self.height()-1-self._inc )
+

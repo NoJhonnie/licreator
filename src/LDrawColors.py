@@ -21,11 +21,12 @@
 
 import LicHelpers
 
+
 CurrentColor = 16
 ComplimentColor = 24
 
 # Dictionary that stores [R,G,B,name] values for each LDraw Color code
-# TODO: If reading LDConfig.ldr fails for whatever reason, fall back to this.  That, or ship an internal version of LDConfig.ldr with Lic. 
+#TODO: If reading LDConfig.ldr fails for whatever reason, fall back to this.  That, or ship an internal version of LDConfig.ldr with Lic. 
 colors = {
     0:  [0.13, 0.13, 0.13, 1.0, 'Black'],
     1:  [0.00, 0.20, 0.70, 1.0, 'Blue'],
@@ -141,11 +142,11 @@ def convertToRGBA(LDrawColorCode):
     if LDrawColorCode == CurrentColor:
         return None
     if LDrawColorCode == ComplimentColor:
-        return None  # TODO: Handle compliment colors
+        return None  #TODO: Handle compliment colors
     if LDrawColorCode not in colors:
-        error_message = "Could not find LDraw Color: %d - Using Black." % LDrawColorCode
-        LicHelpers.writeLogEntry(error_message)
-        print error_message
+        color_error = "Could not find LDraw Color: %d - Using Black" % LDrawColorCode
+        LicHelpers.writeLogEntry(color_error , "convertToRGBA")
+        print color_error
         return LicHelpers.LicColor(*colors[0])
     return LicHelpers.LicColor(*colors[LDrawColorCode])
     
@@ -153,11 +154,11 @@ def getColorName(LDrawColorCode):
     if LDrawColorCode == CurrentColor:
         return None
     if LDrawColorCode == ComplimentColor:
-        return None  # TODO: Handle compliment colors
+        return None  #TODO: Handle compliment colors
     if LDrawColorCode not in colors:
-        error_message = "Could not find LDraw Color: %d - Using Black." % LDrawColorCode
-        LicHelpers.writeLogEntry(error_message)
-        print error_message
+        color_error = "Could not find LDraw Color: %d - Using Black" % LDrawColorCode
+        LicHelpers.writeLogEntry(color_error ,"getColorName")
+        print color_error
     return colors[LDrawColorCode][-1]
 
 def complimentColor(LDrawColorCode):

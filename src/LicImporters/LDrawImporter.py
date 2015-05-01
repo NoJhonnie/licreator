@@ -18,10 +18,14 @@
     along with this program.  If not, see http://www.gnu.org/licenses/
 """
 
-import os.path
+import code
 import logging
+import os.path
 
 from OpenGL import GL
+
+import LDrawColors
+from LicHelpers import LicColor
 
 
 LDrawPath = None  # This will be set by the object calling this importer
@@ -57,7 +61,7 @@ class LDrawImporter(object):
 
     def createNewPartFromLine(self, line, parent):
 
-        filename, color, matrix = lineToPart(line)
+        filename, color, matrix, rgba = lineToPart(line)
 
         if (filename not in self.submodels) and (LDrawFile.getPartFilePath(filename) is None):
             error_message =  "Could not find Part File - ignoring: " + filename
@@ -65,7 +69,7 @@ class LDrawImporter(object):
             print error_message
             return None
 
-        part = self.instructions.createPart(filename, color, matrix)
+        part = self.instructions.createPart(filename, color, matrix, False, rgba)
 
         if part.abstractPart is None:
             if filename in self.submodels:
@@ -140,6 +144,9 @@ class LDrawImporter(object):
                 a = float(l[10])/256 if (len(l) > 10 and l[9] == 'ALPHA') else 1.0
                 name = l[2].replace('_', ' ')
                 instructions.addColor(code, r, g, b, a, name)
+                if not LDrawColors.colors.has_key(code):
+                    LDrawColors.colors[ code ] = (r, g, b, a, name)
+                    
         instructions.addColor(16, None)  # Set special 'CurrentColor' to None
 
 Comment = '0'
@@ -163,7 +170,8 @@ def GLToLDMatrix(matrix):
     return [m[12], m[13], m[14], m[0], m[4], m[8], m[1], m[5], m[9], m[2], m[6], m[10]]
 
 def createPartLine(color, matrix, filename):
-    l = [PartCommand, str(color.code())]
+    lDrawCode = color.code() if color else LicColor.black().code()
+    l = [PartCommand, str(lDrawCode)]
     m = GLToLDMatrix(matrix)
     l += [str(x)[:-2] if str(x).endswith(".0") else str(x) for x in m]
     l.append(filename)
@@ -184,9 +192,16 @@ def lineToPart(line):
     if I don't specify base 16.
     """
     filename = ' '.join(line[15:])
-    color = int(line[2] ,base=0)
+
+    rgba = ()
+    color = 16
+    if line[2].startswith("0x"):
+        rgba  = LicColor.RGBAfromCustom(line[2])
+    else:
+        color = int(line[2] ,base=0)
+    
     matrix = LDToGLMatrix(line[3:15])
-    return (filename, color, matrix)
+    return (filename, color, matrix, rgba)
 
 def createSubmodelLines(filename):
     filename = os.path.basename(filename)

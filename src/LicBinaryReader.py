@@ -21,11 +21,12 @@
 
 from PyQt4.QtCore import *
 
-from LicModel import *
-from LicTemplate import *
 from LicCustomPages import *
 import LicGLHelpers
 import LicHelpers
+from LicModel import *
+from LicTemplate import *
+
 
 def ro(self, targetType):
     c = targetType()
@@ -64,15 +65,21 @@ def loadLicFile(filename, instructions):
 
     template = __readTemplate(stream, instructions)
     yield
-
+    
     for unused in __readInstructions(stream, instructions):
         yield
+
+    contentname ,content = __readRAWContent(stream)
+    yield
 
     instructions.licFileVersion = stream.licFileVersion
 
     if template:
         template.submodel = instructions.mainModel
-
+    
+    if content:
+        instructions.setOrginalContent(contentname,content)
+    
     template.lockIcon.resetPosition()
     instructions.mainModel.template = template
 
@@ -107,7 +114,27 @@ def __createStream(filename, template = False):
     if stream.licFileVersion > FileVersion:
         raise IOError, "Cannot read file %s. It was created with a newer version of LIC(%d) than you're using (%d)." % (filename, stream.licFileVersion, FileVersion)
     return fh, stream
-    
+
+def __readRAWContent(stream):
+    """ The idea behind QDataStream is that you can serialize anything with it one time and later deserialize it. 
+        So what you put in the stream you have to read back in the same order: No extra counter needed.
+    """
+    raw = []
+    name= "restored.dat"
+    if not stream.atEnd():
+        obj = stream.readString()
+        if obj:
+            content = obj.split("\n")
+            start   = False
+            for line in content:
+                if line.lower().startswith("orginalcontent"):
+                    start = True
+                    if line.split().__len__() > 1:
+                        name = line.split()[1]
+                elif start:
+                    raw.append(line)
+    return (name, raw)
+   
 def __readTemplate(stream, instructions):
 
     filename = str(stream.readQString())

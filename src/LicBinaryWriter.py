@@ -21,11 +21,12 @@
 
 from PyQt4.QtCore import *
 
-from LicModel import *
 from LicCustomPages import *
 import LicGLHelpers
+from LicModel import *
 
-def saveLicFile(filename, instructions):
+
+def saveLicFile(filename, instructions, additional = [] ,contentname =""):
 
     fh, stream = __createStream(filename)
 
@@ -36,6 +37,9 @@ def saveLicFile(filename, instructions):
 
     __writeTemplate(stream, instructions.template)
     __writeInstructions(stream, instructions)
+
+    if [] != additional:
+        __writeRAWContent(stream, additional, contentname)
 
     if fh is not None:
         fh.close()
@@ -61,6 +65,25 @@ def __createStream(filename):
     stream.writeInt32(MagicNumber)
     stream.writeInt16(FileVersion)
     return fh, stream
+
+def __writeRAWContent(stream, content, filename):
+    ba = QByteArray()
+    if filename:
+        name = os.path.basename(filename).replace(" ","")
+    else:
+        name = "restored.dat"
+    try:
+        st = os.stat(filename)
+        uid = st.st_uid
+        if 0 == st.st_uid and os.environ.has_key("username"):
+            uid = os.environ["USERNAME"]
+        ba.append ("OrginalContent: {0} SIZE{1} CTIME{2} UID{3}\n\n".format(name ,st.st_size ,st.st_ctime ,uid) )
+    except:
+        ba.append ("OrginalContent: %s\n\n" % name)
+    for line in content:
+        ba.append(line.strip() +"\n\n")
+    stream << ba    
+
 
 def __writeTemplate(stream, template):
 

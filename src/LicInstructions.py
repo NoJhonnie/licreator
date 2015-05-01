@@ -23,10 +23,11 @@ import sys
 
 from PyQt4.QtCore import *
 
-from LicHelpers import LicColor, LicColorDict
-from LicModel import *
 from LicCustomPages import *
+from LicHelpers import LicColor, LicColorDict
 from LicImporters import LDrawImporter
+from LicModel import *
+
 
 class Instructions(QObject):
     itemClassName = "Instructions"
@@ -43,6 +44,8 @@ class Instructions(QObject):
 
         self.glContext = glWidget
         self.glContext.makeCurrent()
+        
+        self.setOrginalContent()
 
     def __getTemplate(self):
         return self.mainModel.template
@@ -51,8 +54,12 @@ class Instructions(QObject):
         if (self.mainModel.template is None):
             self.mainModel.incrementRows(1)
         self.mainModel.template = template
+        
+    def __getModelcontent(self):
+        return self.__modelcontent
 
     template = property(__getTemplate, __setTemplate)
+    modelcontent = property(__getModelcontent)
 
     def clear(self):
 
@@ -215,7 +222,12 @@ class Instructions(QObject):
         csiList = self.mainModel.getCSIList()
         for csi in csiList:
             csi.isDirty = True
-
+    
+    def setOrginalContent(self ,name ="", content=[]):
+        self.__modelcontent = {}
+        self.__modelcontent["name"] = name
+        self.__modelcontent["content"] = content
+        
     def updateMainModel(self, updatePartList = True):
         if self.mainModel.hasTitlePage():
             self.mainModel.titlePage.submodelItem.resetPixmap()
@@ -261,7 +273,8 @@ class Instructions(QObject):
 
         self.glContext.makeCurrent()
 
-    # TODO: Fix POV Export so it works with the last year's worth of updates
+    #TODO: Fix POV Export so it works with the last year's worth of updates
+    
     def exportToPOV(self):
         #global submodelDictionary
         #for model in submodelDictionary.values():
@@ -345,7 +358,6 @@ class Instructions(QObject):
     def exportToPDF(self):
 
         # Create an image for each page
-        # TODO: Connect PDF export to page resolution settings
         filename = os.path.join(config.pdfCachePath(), os.path.basename(self.mainModel.filename)[:-3] + "pdf")
         yield filename
 
@@ -356,6 +368,7 @@ class Instructions(QObject):
 
         yield 2 * exporter.next()
 
+        # Create Document settings
         printer = QPrinter(QPrinter.HighResolution)
         printer.setOutputFileName(filename)
         printer.setOutputFormat(QPrinter.PdfFormat)
@@ -363,12 +376,14 @@ class Instructions(QObject):
         printer.setResolution(Page.Resolution)
         printer.setPaperSize(QSizeF(Page.PageSize), QPrinter.DevicePixel)
 
+        # Rendering
         pageFilenameList = []
         for pageFilename in exporter:
             fn = os.path.splitext(os.path.basename(pageFilename))[0].replace('_', ' ')
             yield "Rendering " + fn
             pageFilenameList.append(pageFilename)
 
+        # Adding
         painter = QPainter()
         painter.begin(printer)
         for pageFilename in pageFilenameList:
@@ -393,10 +408,15 @@ class InstructionsProxy(object):
     def __init__(self, instructions):
         self.__instructions = instructions
 
-    def createPart(self, fn, colorCode, matrix, invert = False):
+    def createPart(self, fn, colorCode, matrix, invert = False, rgba = ()):
 
         partDictionary = self.__instructions.partDictionary
-        color = self.__instructions.colorDict[colorCode]
+    # assigned custom color data <tuple>(r,g,b,a) ,otherwise stay <integer>colorCode AS IS
+        if 16 == colorCode and rgba:
+            color = LicColor(rgba[0],rgba[1],rgba[2],rgba[3] ,"Custom")
+        else:
+            color = self.__instructions.colorDict[colorCode]
+        
         part = Part(fn, color, matrix, invert)
 
         if fn in partDictionary:
@@ -424,7 +444,7 @@ class InstructionsProxy(object):
 
     def addColor(self, colorCode, r = 1.0, g = 1.0, b = 1.0, a = 1.0, name = 'Black'):
         cd = self.__instructions.colorDict
-        cd[colorCode] = None if r is None else LicColor(r, g, b, a, name)
+        cd[colorCode] = None if r is None else LicColor(r, g, b, a, name, colorCode)
 
     def addPart(self, part, parent = None):
         if parent is None:
