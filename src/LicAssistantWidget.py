@@ -73,6 +73,9 @@ class LicWorker(QObject):
     def start(self):
         self._workerThread.start()
         
+    def terminate(self):
+        self._workerThread.terminate()
+        
     def _doFinishWork(self):
         self._counter =0  
         self._fn =[]

@@ -28,7 +28,8 @@ import LicLayout
 from LicModel import *
 from LicAssistantWidget import LicPlacementAssistant
 import LicUndoActions
-from LicTemplate import TemplatePage
+from LicTemplate import TemplatePage, TemplatePLIItem, TemplateLineItem,\
+    TemplateCSI
 
 
 class LicGraphicsView(QGraphicsView):
@@ -669,9 +670,9 @@ class LicGraphicsScene(QGraphicsScene):
 
         for item in self.selectedItems():
             # On Template Page, igNOre event so all page elements can't move
-            if isinstance(item, QGraphicsItem) and item.flags().__int__() == NoMoveFlags.__int__ ():
-                event.ignore()
-                return
+            if isinstance(item, (QGraphicsSimpleTextItem,TemplateLineItem,TemplatePLIItem,TemplateCSI)):
+                if item.flags().__int__() == NoMoveFlags.__int__ ():
+                    return
             # Part class haVE own event
             if isinstance(item, Part):
                 item.keyReleaseEvent(event)

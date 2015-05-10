@@ -1197,6 +1197,7 @@ class RotateScaleSignalItem(object):
 class SubmodelPreview(SubmodelPreviewTreeManager, GraphicsRoundRectItem, RotateScaleSignalItem):
     itemClassName = "SubmodelPreview"
 
+    defaultSize = QSizeF(300.0,300.0)
     defaultScale = 1.0
     defaultRotation = [20.0, 45.0, 0.0]
     fixedSize = True
@@ -1262,6 +1263,11 @@ class SubmodelPreview(SubmodelPreviewTreeManager, GraphicsRoundRectItem, RotateS
             self.numberItem.setPos(self.abstractPart.width, self.abstractPart.height)
             self.numberItem.moveBy(PLI.margin.x(), PLI.margin.y())
             self.resetRect()
+        # validate size
+        size = self.rect().size()
+        ptF  = self.rect().topLeft()
+        if size.width() < 100 or size.height() < 100:
+            self.setRect(QRectF(ptF,self.defaultSize))
 
     def moveTo(self, align = Qt.AlignLeft):
         pw, ph = self.parent().PageSize
@@ -1582,8 +1588,8 @@ class PLI(PLITreeManager, GraphicsRoundRectItem):
             return
 
         # Initialize each item in this PLI, so they have good rects and properly positioned quantity labels
-#         for item in self.pliItems:
-#             item.initLayout()
+        for item in self.pliItems:
+            item.initLayout()
 
         # Sort list of parts to lay out first by color (in reverse order) 
         # ,then by width (narrowest first) 

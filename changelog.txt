@@ -1,3 +1,9 @@
+1.0.509----------------------------------------------------------------------------
+:: Fix Part List Image and Construction Step Image area and position on import
+:: When height and width of preview of submodel less that 100px, set both as 300px
+:: Fix usage of keyS: PageDown, PageUp, Home, End
+:: Added LicWorker.terminate method
+:: Disabled point finder tool when Adjust view
 1.0.000----------------------------------------------------------------------------
 :: Improved positioning of preview of submodel /add margins, etc./
 :: Improved usability of guide lines
@@ -37,7 +43,7 @@
 :: Move SUBWINDOW_BACKGROUND from LicAssistantWidget to LicHelpers
 :: Added LicGraphicsScene.catchTheMouse property
 :: SubmodelPreview.moveTo connected to undo stack
-:: LicUndoActions.MoveCommand use Qt.AccessibleTextRole or the number of objects in undo stack
+:: LicUndoActions.MoveCommand use Qt.AccessibleTextRole or the number of objects
 :: Changed StaticGuide on FixedGuide
 :: Changed menu item label "Toggle Margins" on "Show Margins" and set as checkable
 :: Merge setAlignLeftSignal, setAlignRightSignal, setAlignHCentreSignal into setAlign /EditableTextItem/
