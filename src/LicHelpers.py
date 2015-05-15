@@ -22,12 +22,14 @@
 import collections
 import logging
 
-from PyQt4.QtCore import Qt, QPointF
+from PyQt4.QtCore import Qt, QPointF, QString, QSettings
 from PyQt4.QtGui import QPainterPath
 
 import LDrawColors
 import re
-from config import getCodesFile
+from config import grayscalePath
+import os.path
+from PyQt4.Qt import QMouseEvent, QApplication
 
 SUBWINDOW_BACKGROUND = "#FFFACD"
 
@@ -127,19 +129,6 @@ def makeFunc(func, arg):
     def f(): func(arg)
     return f
 
-def determinePartCode(strdata):
-    suplement = getCodesFile()
-    name = "{0}/{1}.dat".format('Design',strdata)
-    result = 0
-    if strdata.__len__() > 3:
-        txt = suplement.value(name,strdata).toString()
-        res = re.split(r'\D',txt)
-        if res and res[0].__len__() > 3:
-            result = res[0]
-    if result <= 0:
-        suplement.setValue(name,0)
-    return result
-
 def determinant3x3(m):
     # m must be in the form [[00, 01, 02], [10, 11, 12], [20, 21, 22]]
     d1 = m[0][0] * ((m[1][1] * m[2][2]) - (m[1][2] * m[2][1]))
@@ -169,6 +158,23 @@ def matrixToList(m):
 
 def GLMatrixToXYZ(matrix):
     return [matrix[12], matrix[13], matrix[14]]
+
+def getCodesFile():
+    iniFile = os.path.join(grayscalePath(), 'codes.ini')
+    return QSettings(QString(iniFile), QSettings.IniFormat)
+
+def determinePartCode(strdata):
+    suplement = getCodesFile()
+    name = "{0}/{1}.dat".format('Design',strdata)
+    result = 0
+    if strdata.__len__() > 3:
+        txt = suplement.value(name,strdata).toString()
+        res = re.split(r'\D',txt)
+        if res and res[0].__len__() > 3:
+            result = res[0]
+    if result <= 0:
+        suplement.setValue(name,0)
+    return result
 
 def compareParts(p1, p2):
     if p1 and p2:
@@ -319,3 +325,5 @@ def polygonToCurvedPath(polygon, radius):
     path.closeSubpath()
     return path
     
+
+

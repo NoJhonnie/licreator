@@ -201,16 +201,14 @@ class AdjustAreaDialog(QDialog):
         buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal)
         self.widthSpinBox = self.makeSpinBox(originalRect.width(), self._minValue, 1000.0, None)
         self.heightSpinBox = self.makeSpinBox(originalRect.height(), self._minValue, 1000.0, None)
-        self.xyzWidget = XYZWidget(None, -1000, 1000, originalRect.x(), originalRect.y(), 1.0)
+        self.xyzWidget = XYZWidget(None, -1000, 1000, originalRect.x(), originalRect.y(), 0.0)
 
         self.conn = ExtendedLabel(self)
         self.conn.setSwitchablePixmap(QPixmap(":/link_break"),QPixmap(":/link"))
         self.conn.setPixmap(QPixmap(":/link_break"))
         
-# FIXME: when point finder tool finishing work, LicGraphicsScene lose focus     
-#             try simulate mouse left-click in findPoint method at end
-#         find = ExtendedLabel(self)
-#         find.setPixmap(QPixmap(":/find"))
+        find = ExtendedLabel(self)
+        find.setPixmap(QPixmap(":/find"))
 
         vbox = QVBoxLayout()
         vbox.addWidget(self.widthSpinBox)
@@ -224,7 +222,7 @@ class AdjustAreaDialog(QDialog):
         grid = QGridLayout()
         grid.addLayout(hbox, 1, 1 ,Qt.AlignHCenter)
         grid.addWidget(self.xyzWidget, 2, 1)    
-#         grid.addWidget(find, 2, 2 ,Qt.AlignTop)
+        grid.addWidget(find, 2, 2 ,Qt.AlignTop)
 
         grid.addWidget(buttonBox, 3, 0, 1, 3)
         self.setLayout(grid)    
@@ -232,7 +230,7 @@ class AdjustAreaDialog(QDialog):
 
         self.connect(buttonBox, SIGNAL("accepted()"), self, SLOT("accept()"))
         self.connect(buttonBox, SIGNAL("rejected()"), self, SLOT("reject()"))
-#         self.connect(find, SIGNAL('clicked()'), self.findPointSignal)
+        self.connect(find, SIGNAL('clicked()'), self.findPointSignal)
         
         self.connect(self.widthSpinBox, SIGNAL("valueChanged(int)"), self.changeWidth)
         self.connect(self.heightSpinBox, SIGNAL("valueChanged(int)"), self.changeHeight)

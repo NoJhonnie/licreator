@@ -762,10 +762,10 @@ class LockIcon(QGraphicsPixmapItem):
         QGraphicsPixmapItem.__init__(self, parent)
         
         if not LockIcon.loaded:
-            LockIcon.activeOpenIcon = QPixmap(":/lock_open")
-            LockIcon.activeCloseIcon = QPixmap(":/lock_close")
-            LockIcon.deactiveOpenIcon = QPixmap(":/lock_grey_open")
-            LockIcon.deactiveCloseIcon = QPixmap(":/lock_grey_close")
+            LockIcon.activeOpenIcon = QIcon(":/lock_open").pixmap(QSize(32,32))
+            LockIcon.activeCloseIcon = QIcon(":/lock_close").pixmap(QSize(32,32))
+            LockIcon.deactiveOpenIcon = QIcon(":/lock_grey_open").pixmap(QSize(32,32))
+            LockIcon.deactiveCloseIcon = QIcon(":/lock_grey_close").pixmap(QSize(32,32))
             LockIcon.loaded = True
 
         self.setPixmap(LockIcon.deactiveOpenIcon)
@@ -929,8 +929,8 @@ class PartListPage(PartListPageTreeManager, Page):
     def clearNumbering(self):
         self._numbering = False
         for glItem in self.glItemIterator():
-            glItem.setCode( "" )
-            glItem.resetRect()
+            glItem.setCode("")
+            glItem.normalizeView()
         
     def numbering(self):
         self._numbering = True
@@ -938,7 +938,10 @@ class PartListPage(PartListPageTreeManager, Page):
             designNumber = glItem.abstractPart.design()
             if designNumber > 0:
                 glItem.setCode( designNumber )
-                glItem.resetRect()
+                glItem.normalizeView()
+            else:
+                message = "Could not find Design Number for %s - Using 0" % glItem.abstractPart.filename
+                LicHelpers.writeLogEntry(message, self.__class__.__name__)
 
     @staticmethod
     def createPartListPages(instructions):

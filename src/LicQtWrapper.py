@@ -295,7 +295,10 @@ def genericGetOrderedCornerList(self, margin = None):
     return [r.topLeft() + pos, r.topRight() + pos, r.bottomRight() + pos, r.bottomLeft() + pos]
 
 def genericGetPage(self):
-    return self.parentItem().getPage()
+    if hasattr(self.parentItem(), "getPage"):
+        return self.parentItem().getPage()
+    
+    return None
 
 def genericRect(self):
     return self.boundingRect()

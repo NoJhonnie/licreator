@@ -226,7 +226,9 @@ class LicPlacementAssistant(QWidget):
                     }
     _noPLIText = "non a PLI"
     _noMoveText= "You're still on the same page" 
+    _noBlankText= "Page or Step can not be blank"
     _lockedPageText = "Stuff is locked on this page"
+    _processingText = "Processing..."
       
     def __init__(self ,parent=None):
         QWidget.__init__(self,parent,Qt.SubWindow)
@@ -235,6 +237,7 @@ class LicPlacementAssistant(QWidget):
         self.setGeometry(x,1,200,100)
         self.setBackgroundRole(QPalette.Base)
         self._item = None
+        self.destItem = None
         
         warningFont = QFont("Times", 9)
         serifFont = QFont("Times", 12, QFont.Bold)
@@ -285,38 +288,50 @@ class LicPlacementAssistant(QWidget):
     def moveItemToStep(self):
         self._warning.clear()
         if self._item is not None:
-            scene = self._item.scene()
-            stack = scene.undoStack
-            destItem = scene.selectedItems()[0]
+            self.scene = self._item.scene()
             srcPage = self._item.getStep().parentItem()      
+            try:
+                self.destItem = self.scene.selectedItems()[0]
+            except IndexError:
+                self.destItem = None
             
             # Find Step assigned to currently selected item
-            if destItem.__class__.__name__ != "Page":
-                while destItem and not isinstance(destItem,Step):
+            if self.destItem and self.destItem.__class__.__name__ != "Page":
+                while self.destItem and not isinstance(self.destItem,Step):
                     try:
-                        destItem = destItem.parent()
+                        self.destItem = self.destItem.parent()
                     except:
                         break
             
             # Convert Page to first step on the list
-            if destItem and destItem.__class__.__name__ == "Page":
-                if srcPage.number == destItem.number:
+            if self.destItem and self.destItem.__class__.__name__ == "Page":
+                if srcPage.number == self.destItem.number:
                     self._warning.setText(self._noMoveText)
                 else:
-                    destItem = destItem.getStepByNumber(1)
+                    self.destItem = self.destItem.steps[0]
                     
             # Find the selected item's parent page, then flip to that page
             # Move Part into Step
-            if isinstance(destItem,Step):
-                destPage = destItem.parentItem()
+            canMove = True
+            if isinstance(self.destItem,Step):
+                destPage = self.destItem.parentItem()
                 
                 if srcPage.number == destPage.number:
+                    canMove = False
                     self._warning.setText(self._noMoveText)
-                elif destPage.isLocked():
+                     
+                if destPage.isLocked():
+                    canMove = False
                     self._warning.setText(self._lockedPageText)
-                else:
-                    stack.push(MovePartsToStepCommand([self._item], destItem))
-                    self.close()
+                    
+                if destPage.isEmpty():
+                    canMove = False
+                    self._warning.setText(self._noBlankText)
+                 
+                if canMove:        
+                    self._worker = LicWorker([self.job_1S ,self.job_2 ,self.job_3])
+                    self._worker.start()
+
         
     def paintEvent(self, event):
     # prepare canvas
@@ -329,7 +344,29 @@ class LicPlacementAssistant(QWidget):
         p.drawRect( QRectF(1, 1, self.width() -2, self.height() -2) )
         p.setPen(p_old)
             
+    def closeEvent(self, event):
+        self.window().setCursor(Qt.ArrowCursor)
+        self.destItem = None
+        return QWidget.closeEvent(self, event)
+                    
+    def job_1S(self):
+        if self.destItem:
+            self._warning.setText(self._processingText)
+            self.window().setCursor(Qt.WaitCursor)
+                            
+            self.scene.setFocus(Qt.MouseFocusReason)
+            self.scene.setFocusItem(self.destItem ,Qt.MouseFocusReason)
+            self.destItem.setSelected(True)
+
+    def job_2(self):
+        if self.destItem:
+            self.scene.undoStack.push(MovePartsToStepCommand([self._item], self.destItem))
+        
+    def job_3(self):
+        self.close()      
+                              
     def setItemtoMove(self ,part=None):
+        self.destItem = None
         self._item = part
         step = part
         while step and not isinstance(step, Step):

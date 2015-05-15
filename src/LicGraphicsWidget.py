@@ -497,21 +497,21 @@ class LicGraphicsScene(QGraphicsScene):
                 itemDict[guide] = [guidePt.x(), guidePt.y()]
 
         if self.snapToItems:
-            if item and isinstance(item, (Page,Submodel)):
-                for pageItem in item.getPage().getAllChildItems():
-                    if isinstance(pageItem, Step):
-                        continue
-                    if item.isAncestorOf(pageItem):
-                        continue
-                    if pageItem is item:
-                        continue
-                    itemDict[pageItem] = pageItem.getSceneCornerList()
-                    
-                    if isinstance(pageItem, Page):  # Bump page points inwards so we snap to margin, not outside edge
-                        itemDict[pageItem][0] += margin
-                        itemDict[pageItem][1] += margin
-                        itemDict[pageItem][2] -= margin
-                        itemDict[pageItem][3] -= margin
+        
+             for pageItem in item.getPage().getAllChildItems():
+                 if isinstance(pageItem, Step):
+                     continue
+                 if item.isAncestorOf(pageItem):
+                     continue
+                 if pageItem is item:
+                     continue
+                 itemDict[pageItem] = pageItem.getSceneCornerList()
+                 
+                 if isinstance(pageItem, Page):  # Bump page points inwards so we snap to margin, not outside edge
+                     itemDict[pageItem][0] += margin
+                     itemDict[pageItem][1] += margin
+                     itemDict[pageItem][2] -= margin
+                     itemDict[pageItem][3] -= margin
 
         if not itemDict:
             return  # Nothing to snap to
@@ -589,7 +589,7 @@ class LicGraphicsScene(QGraphicsScene):
       
     def mouseReleaseEvent(self, event):
         if self.catchTheMouse:
-            # Need to correctly handling sceneClick signal on press event 
+            self.emit(SIGNAL("sceneClick"), event) 
             return
         # Need to compare the selection list before and after selection, to deselect any selected parts
         parts = []
@@ -632,7 +632,7 @@ class LicGraphicsScene(QGraphicsScene):
         
     def mousePressEvent(self, event):
         if self.catchTheMouse:
-            self.emit(SIGNAL("sceneClick"), event)
+            # Need to correctly handling sceneClick signal on release event
             return
         # Need to compare the selection list before and after selection, to deselect any selected parts
         parts = []

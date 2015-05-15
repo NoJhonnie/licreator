@@ -1,4 +1,11 @@
-1.0.509----------------------------------------------------------------------------
+1.0.155---------------------------------------------------------------------------
+:: Enabled point finder tool when Adjust view
+:: Fix some major bugs
+:: getCodesFile use grayscalePath and moved to LicHelpers
+:: Improve usability of LicPlacementAssistant
+:: Unknown design number is reported to log file
+:: NOTE: build.py use now absolute path of own location as root directory
+1.0.105----------------------------------------------------------------------------
 :: Fix Part List Image and Construction Step Image area and position on import
 :: When height and width of preview of submodel less that 100px, set both as 300px
 :: Fix usage of keyS: PageDown, PageUp, Home, End
@@ -34,7 +41,7 @@
 :: Change restore path to cache model directory, for handling IOError exception
 :: Re-opening ability available only on saved instruction
 :: Added function that adjust view so that all elements are visible /PLIItem ,etc./
-:: Fixed group of miscellaneous bugs
+:: Fix group of miscellaneous bugs
 :: Update placeholder when the has unsaved changes on scene /LicWindow.fileSave/
 :: Added ExtendedLabel.setSwitchablePixmap method
 :: Added ExtendedLabel.switched property
@@ -56,7 +63,7 @@
 0.9.002------------------------------------------------------------------------
 :: Set minimum size of width and height of application 
 :: Assistant now display properly 
-:: Fixed group of miscellaneous bugs
+:: Fix group of miscellaneous bugs
 :: Key TAB can now work in loop
 :: Added ability to re-opening current Instruction book
 :: Disable real-time preview for speed-up and avoid crash situation
@@ -80,12 +87,12 @@
 :: NOTICE: POV-Ray calls work only on instruction without submodels
 0.8.501------------------------------------------------------------------------
 :: Added support of import models created by SR 3DBuilder
-:: Fixed some major bugs when generate images with POV-Ray
+:: Fix some major bugs when generate images with POV-Ray
 :: Major improvements in error handling
 :: Support technique of DRag & DRop for open|import models 
 :: Upgrade user interface
 :: Create Assistant
-:: Fixed group of miscellaneous bugs
+:: Fix group of miscellaneous bugs
 :: Implemented information about estimated time of loading model
 :: Support of command line arguments
 :: Re-arrange __main__ executing 

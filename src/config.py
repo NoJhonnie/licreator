@@ -163,7 +163,3 @@ def pdfCachePath():
 
 def grayscalePath():
     return checkPath('parts',rootCachePath())
-
-def getCodesFile():
-    iniFile = os.path.join(os.path.dirname(sys.argv[0]), 'cache', 'parts', 'codes.ini')
-    return QSettings(QString(iniFile), QSettings.IniFormat)

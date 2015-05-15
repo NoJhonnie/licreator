@@ -43,6 +43,8 @@ from LicQtWrapper import *
 from LicTreeModel import *
 from LicUndoActions import *
 import LicUndoActions
+from LicImporters import LDrawImporter
+from LicHelpers import LicColor
 
 
 #import OpenGL
@@ -1294,14 +1296,20 @@ class SubmodelPreview(SubmodelPreviewTreeManager, GraphicsRoundRectItem, RotateS
                 while not y > self._margin:
                     y += self._margin
                 self.moveBy(x,y)
-        # Qt.AlignCenter        
-        if align == Qt.AlignCenter and self.parent():
+        # Qt.AlignCenter    
+        if align == Qt.AlignCenter:
             halfx = pw/2 - self.boundingRect().width()/2
             halfy = ph/2 - self.boundingRect().height()/2
-            ptF = QPointF(halfx,halfy)
+            ptF = QPointF(halfx , halfy)
             self.setPos(ptF)
-        if not ptF.isNull():
-            self.scene().undoStack.push(LicUndoActions.MoveCommand([self]))
+            x = self.sceneBoundingRect().x()
+            y = self.sceneBoundingRect().y()
+            if x < halfx:
+                self.moveBy(halfx-abs(x),0)
+            if y < halfy:
+                self.moveBy(0,halfy)
+            
+        self.scene().undoStack.push(LicUndoActions.MoveCommand([self]))
 
     def convertToSubAssembly(self):
         self.scene().emit(SIGNAL("layoutAboutToBeChanged()"))
@@ -3271,8 +3279,8 @@ class Part(PartTreeManager, QGraphicsRectItem):
             menu.addAction("Move to &Next Step", lambda: self.moveToStepSignal(step.getNextStep()))
             needSeparator = True
 
-        if isinstance(event,QGraphicsSceneContextMenuEvent) and not self.calloutPart:
-                menu.addAction("Mark to Move", lambda: self.scene().markToMove(self))
+        if not self.calloutPart:
+            menu.addAction("Mark to Move", lambda: self.scene().markToMove(self))
         
         if needSeparator:
             menu.addSeparator()

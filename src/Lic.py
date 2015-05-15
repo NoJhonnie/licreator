@@ -71,7 +71,7 @@ except ImportError:
     except:
         pass # Ignore missing Resource bundle silently - better to run without icons then to crash entirely
 
-__version__ = "1.0"
+__version__ = "1.0.155"
 _debug = False
 
 if _debug:
