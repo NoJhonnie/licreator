@@ -1,8 +1,7 @@
 # licreator
-Automatically exported from code.google.com/p/licreator
+LIC imports 3D models, organizes them into submodels, pages & steps, and exports the end result as images or PDF.
 
 LEGO Instruction Book Creator. In abbreviated LIC is a cross-platform, Python, OpenGL & Qt powered desktop application for creating and editing LEGO instruction books. 
-LIC imports 3D models, organizes them into submodels, pages & steps, and exports the end result as images or PDF.
 
 Highlights:
 :: A rich, WYSIWYG UI editor, which provides a fully interactive preview window along side a drag & drop-enabled navigation tree, to help organize and layout your book. 
