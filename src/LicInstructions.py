@@ -81,20 +81,22 @@ class Instructions(QObject):
 
     def importModel(self, filename):
 
+        # Create and fill with data main model instance
         self.mainModel = Mainmodel(self, self, filename)
         self.mainModel.appendBlankPage()
         self.mainModel.importModel()
-        
+
+        # Initializing Pages and Steps
         self.mainModel.syncPageNumbers()
         self.mainModel.addInitialPagesAndSteps()
-        
+                    
         submodelCount = self.mainModel.submodelCount()
         pageList = self.mainModel.getPageList()
         pageList.sort(key = lambda x: x._number)
         totalCount = len(self.partDictionary) + len(self.mainModel.getCSIList()) + submodelCount  # Rough count only
 
         yield totalCount  # Special first value is maximum number of progression steps in load process
-
+        
         yield "Initializing GL display lists"
         for label in self.initGLDisplayLists():  # generate all part GL display lists on the general glWidget
             yield label
@@ -108,7 +110,7 @@ class Instructions(QObject):
 
         yield "Initializing Submodel Images"
         self.mainModel.addSubmodelImages()
-
+                
         yield "Laying out Pages"
         for page in pageList:
             page.initLayout()
@@ -192,7 +194,8 @@ class Instructions(QObject):
             return    # If there's no parts to initialize, we're done here
 
         partList2 = []
-        sizes = [128, 256, 512, 1024, 2048] # Frame buffer sizes to try - could make configurable by user, if they've got lots of big submodels
+        # Frame buffer sizes to try - could make configurable by user, if they've got lots of big submodels
+        sizes = [128, 256, 512, 1024, 2048] 
 
         for size in sizes:
 
@@ -243,7 +246,9 @@ class Instructions(QObject):
             return  # All CSIs initialized - nothing to do here
 
         csiList2 = []
-        sizes = [512, 1024, 2048] # Frame buffer sizes to try - could make configurable by user, if they've got lots of big submodels or steps
+        # Frame buffer sizes to try - could make configurable by user, 
+        # if they've got lots of big submodels or steps
+        sizes = [512, 1024, 2048] 
 
         for size in sizes:
 
@@ -268,7 +273,8 @@ class Instructions(QObject):
             if len(csiList2) < 1:
                 break  # All images initialized successfully
             else:
-                csiList = csiList2  # Some images rendered out of frame - loop and try bigger frame
+                # Some images rendered out of frame - loop and try bigger frame
+                csiList = csiList2  
                 csiList2 = []
 
         self.glContext.makeCurrent()

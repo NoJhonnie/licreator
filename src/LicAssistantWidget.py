@@ -33,22 +33,24 @@ import config
 import tempfile
 from LicCustomPages import Page
 from LicHelpers import SUBWINDOW_BACKGROUND
-from LicDialogs import MessageDlg
+from LicDialogs import MessageDlg, makeSpinBox
 import LicHelpers
 
 
 shortcuts = {
-     1: ["Move vertically with 20 steps","Shift+Down | Up"]
-    ,2: ["Move vertically with 5 steps","Ctrl+Down | Up"]
+     1: ["Move vertically with 20 steps","Shift + Down | Up"]
+    ,2: ["Move vertically with 5 steps","Ctrl + Down | Up"]
     ,3: ["Jump to next step on current page","Tab"]
-    ,4: ["Move horizontally with 20 steps","Shift+Right | Left"]
-    ,5: ["Move horizontally with 5 steps","Ctrl+Right | Left"]
-    ,6: ["Jump to next page","PageDown"]
-    ,7: ["Jump to previous page","PageUp"]
-    ,8: ["Go to first or title page","Home"]
-    ,9: ["Go to last page","End"]
-    ,10:["Show or hide rules","F6"]
-    ,11: ["Show or hide this pop-up window","F1"]
+    ,4: ["Jump to next or first part","Shift + Tab"]
+    ,5: ["Move horizontally with 20 steps","Shift + Right | Left"]
+    ,6: ["Move horizontally with 5 steps","Ctrl + Right | Left"]
+    ,7: ["Jump to next page","PageDown"]
+    ,8: ["Jump to previous page","PageUp"]
+    ,9: ["Go to first or title page","Home"]
+    ,10:["Go to last page","End"]
+    ,11:["Jump to selected step or page","F10"]
+    ,12:["Show or hide rules","F6"]
+    ,13:["Show or hide this pop-up window","F1"]
 }
 
 class LicWorker(QObject):
@@ -98,6 +100,73 @@ class LicWorker(QObject):
             self._workerThread.quit()
         else:
             self._doLongWork(self._counter)
+
+class LicJumper(MessageDlg):
+    def __init__(self ,scene):
+        MessageDlg.__init__(self , scene.views()[0])
+        
+        self.scene = scene
+        self.maxCount = [1,1]
+        
+        self.setText("Jump to:")
+        self.setStatusTip("Put the numer and press ENTER to finish task")
+        
+        self.valueSpinBox = makeSpinBox(self ,1 ,1 ,1.0)
+        self.pageCheckBox = QRadioButton("page" ,self)
+        self.stepCheckBox = QRadioButton("step" ,self)
+        
+        self.valueSpinBox.setSingleStep(2)
+        self.pageCheckBox.setChecked(True)
+        
+        self.connect(self.valueSpinBox, SIGNAL("editingFinished()") ,self.acceptValue)
+        self.connect(self.pageCheckBox, SIGNAL("toggled(bool)") ,self.stateChanged)
+        
+        hbox = self.centreLayout
+        hbox.addSpacing(5)
+        hbox.addWidget(self.valueSpinBox ,1 ,Qt.AlignLeft)
+        hbox.addWidget(self.pageCheckBox ,1 ,Qt.AlignLeft)        
+        hbox.addWidget(self.stepCheckBox ,1 ,Qt.AlignLeft)    
+        hbox.addSpacing(100)    
+        
+    def showEvent(self, event):
+        self.reset()
+        self.valueSpinBox.setFocus(Qt.MouseFocusReason)
+        self.valueSpinBox.selectAll()
+        
+        if self.scene.pages: 
+            bShow = self.scene.pages[0].instructions.mainModel.submodels.__len__() == 0 
+            self.stepCheckBox.setVisible(bShow)
+        if not self.stepCheckBox.isVisible():
+            self.pageCheckBox.setChecked(True) 
+        
+        return QWidget.showEvent(self, event)    
+    
+    def acceptValue(self):
+        if self.valueSpinBox.hasFocus():
+            self.close()
+            if self.scene.pages:
+                number = self.valueSpinBox.value()
+                if self.pageCheckBox.isChecked():
+                    self.scene.selectPage(number)
+                if self.stepCheckBox.isChecked():
+                    for page in self.scene.pages:
+                        for step in page.steps:
+                            if step.number == number:
+                                self.scene.selectPage(step.parentItem().number)
+                                step.setSelected(True)
+                                return
+                                    
+    def stateChanged(self, state):
+        self.valueSpinBox.setMaximum(self.maxCount[state])
+    
+    def reset(self):
+        self.valueSpinBox.setMaximum(1)
+        if self.scene.pages:  
+            pageCount = self.scene.pageCount()
+            stepCount = self.scene.pages[pageCount].steps[-1].number
+            
+            self.maxCount=[stepCount,pageCount]
+            self.valueSpinBox.setMaximum(pageCount)
 
 class LicDownloadAssistant(MessageDlg):
     repositoryHost = "https://raw.githubusercontent.com"
@@ -332,7 +401,6 @@ class LicPlacementAssistant(QWidget):
                     self._worker = LicWorker([self.job_1S ,self.job_2 ,self.job_3])
                     self._worker.start()
 
-        
     def paintEvent(self, event):
     # prepare canvas
         p = QPainter(self)

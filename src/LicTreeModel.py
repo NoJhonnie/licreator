@@ -469,7 +469,10 @@ class CSITreeManager(BaseTreeManager):
     
     def child(self, row):
         if CSITreeManager.showPartGroupings:
-            return self.parts[row]
+            try:
+                return self.parts[row]
+            except IndexError:
+                return None
         return self.getPartList()[row]
 
     def rowCount(self):

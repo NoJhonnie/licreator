@@ -1,3 +1,11 @@
+2.0.016---------------------------------------------------------------------------
+:: Fix TypeError and AttributeError for CalloutToSubmodelCommand
+:: Fix bugs and Improved scaling and rotation
+:: Fix child method /CSITreeManager/
+:: Added labels to AdjustAreaDialog
+:: Added new shortcuts
+:: Added new actions to PLIItem's context menu  
+:: Added ability to jump to selected step or page with construction steps
 1.0.155---------------------------------------------------------------------------
 :: Enabled point finder tool when Adjust view
 :: Fix some major bugs

@@ -247,6 +247,17 @@ class LicGraphicsScene(QGraphicsScene):
         if self.pages and self.currentPage:
             self.selectPageFullUpdate(min(self.pages[-1]._number, self.currentPage._number + 1))
 
+    def pageCount(self):
+        """ 
+            Return only the number of pages with Construction Step Image [CSI].
+            Exclude template page, title page and part list pages.  
+        """
+        count = 0
+        for page in self.pages:
+            if page.data(Qt.WhatsThisRole) == "Page":
+                count += 1
+        return count
+        
     def selectFirstPage(self):
         if self.pages:
             self.selectPageFullUpdate(1)
@@ -258,6 +269,37 @@ class LicGraphicsScene(QGraphicsScene):
     def selectCurrentPage(self):
         if self.currentPage:
             self.selectPageFullUpdate(self.currentPage._number)
+            
+    def selectNextPart(self):
+        """ Focus on next|first sibling part """
+        choosen = csi = None
+        for item in self.selectedItems():
+            if isinstance(item, (Step,CSI,Part)):
+                choosen = item
+                 
+        if isinstance(choosen, Step):
+            csi = choosen.csi
+            choosen = csi.getPartList()[0]
+        if isinstance(choosen, CSI):
+            csi = choosen
+            choosen = csi.getPartList()[0]
+        if isinstance(choosen, Part):
+            csi = choosen.getCSI()
+            lst = csi.getPartList()
+            try:
+                idx = lst.index(choosen)
+            except ValueError:
+                idx = 0
+            else:
+                idx += 1
+                if idx > lst.__len__() -1:
+                    idx = 0
+                    
+            choosen = lst[idx]
+        
+        if csi and choosen:
+            csi.selectPart(choosen)
+        return              
 
     def selectPageFullUpdate(self, pageNumber):
         self.selectPage(pageNumber)
@@ -497,21 +539,21 @@ class LicGraphicsScene(QGraphicsScene):
                 itemDict[guide] = [guidePt.x(), guidePt.y()]
 
         if self.snapToItems:
-        
-             for pageItem in item.getPage().getAllChildItems():
-                 if isinstance(pageItem, Step):
-                     continue
-                 if item.isAncestorOf(pageItem):
-                     continue
-                 if pageItem is item:
-                     continue
-                 itemDict[pageItem] = pageItem.getSceneCornerList()
-                 
-                 if isinstance(pageItem, Page):  # Bump page points inwards so we snap to margin, not outside edge
-                     itemDict[pageItem][0] += margin
-                     itemDict[pageItem][1] += margin
-                     itemDict[pageItem][2] -= margin
-                     itemDict[pageItem][3] -= margin
+            
+            for pageItem in item.getPage().getAllChildItems():
+                if isinstance(pageItem, Step):
+                    continue
+                if item.isAncestorOf(pageItem):
+                    continue
+                if pageItem is item:
+                    continue
+                itemDict[pageItem] = pageItem.getSceneCornerList()
+                
+                if isinstance(pageItem, Page):  # Bump page points inwards so we snap to margin, not outside edge
+                    itemDict[pageItem][0] += margin
+                    itemDict[pageItem][1] += margin
+                    itemDict[pageItem][2] -= margin
+                    itemDict[pageItem][3] -= margin
 
         if not itemDict:
             return  # Nothing to snap to
@@ -677,7 +719,7 @@ class LicGraphicsScene(QGraphicsScene):
             if isinstance(item, Part):
                 item.keyReleaseEvent(event)
                 return
-            
+              
         key = event.key()
         if key == Qt.Key_PageUp:
             return self.pageUp()
@@ -689,10 +731,10 @@ class LicGraphicsScene(QGraphicsScene):
             return self.selectLastPage()
 
         x = y = 0
-        offset = 1
-        if event.modifiers() & Qt.ShiftModifier:
-            offset = 20 if event.modifiers() & Qt.ControlModifier else 5
-
+        offset = 20 if event.modifiers() & Qt.ShiftModifier else 1
+        if event.modifiers() & Qt.ControlModifier:
+            offset = 5
+        
         if key == Qt.Key_Left:
             x = -offset
         elif key == Qt.Key_Right:

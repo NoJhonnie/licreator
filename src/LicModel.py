@@ -788,6 +788,41 @@ class Step(StepTreeManager, QGraphicsRectItem):
             if self.pli.isEmpty():
                 self.pli.setRect(0, 0, 0, 0)
                 self.pli.setPos(0, 0)
+                
+    def splitParts(self, maxParts):
+        cnt = self.csi.partCount()
+        lst = self.csi.getPartList()
+        stack = self.scene().undoStack
+        scene = self.scene()
+        if cnt > maxParts:
+            m = 1
+            partList = []
+            page = self.parentItem()
+            startNumber = page.number
+            scene.saveSelection()
+            
+            for n in range(maxParts,cnt):
+                partList.append(lst[n])
+                m += 1
+                lst[n].setSelected(True)
+                if m > maxParts:
+                    stack.beginMacro("add Page and blank Step")
+                    page.addPageSignal(page.number + 1, page._row + 1)
+                    page = page.nextPage()
+                    page.addBlankStepSignal()
+                    stack.endMacro()
+                    
+                    scene.selectPage(startNumber)
+                    scene.clearSelectedParts()
+                    for p in partList:
+                        p.setSelected(True)
+                    
+                    p.moveToStepSignal(page.steps[0])
+                    m = 1
+                    partList = []
+                    
+            scene.restoreSelection()
+            scene.emit(SIGNAL("sceneClick"))
 
     def addCallout(self, callout):
         callout.setParentItem(self)
@@ -1079,12 +1114,17 @@ class Step(StepTreeManager, QGraphicsRectItem):
         if len(selList) > 1 and all(isinstance(item, Step) for item in selList):
             menu.addAction("Merge selected Steps", self.mergeAllStepsSignal)
             menu.addSeparator()
-
+            
         if not self.isInCallout():
             if parent.prevPage() and parent.steps[0] is self:
                 menu.addAction("Move to &Previous Page", lambda: self.moveToPrevOrNextPage(True))
             if parent.nextPage() and parent.steps[-1] is self:
                 menu.addAction("Move to &Next Page", lambda: self.moveToPrevOrNextPage(False))
+
+        PARTS_PER_STEP_MAX = 15
+        if self.csi.partCount()-PARTS_PER_STEP_MAX >= PARTS_PER_STEP_MAX:
+            menu.addSeparator()
+            menu.addAction("Split parts to new Stepts", lambda: self.splitParts(PARTS_PER_STEP_MAX))
 
         menu.addSeparator()
         if self.getPrevStep():
@@ -1175,11 +1215,10 @@ class RotateScaleSignalItem(object):
 
     def changeRotation(self, rotation):
         self.rotation = list(rotation)
-        self.resetPixmap()
+        self.resetPixmap() 
 
     def acceptRotation(self, oldRotation):
-        action = RotateItemCommand(self, oldRotation, self.rotation)
-        self.scene().undoStack.push(action)
+        self.scene().undoStack.push(RotateItemCommand(self, oldRotation, self.rotation))
 
     def scaleSignal(self):
         parentWidget = self.scene().views()[0]
@@ -1190,16 +1229,15 @@ class RotateScaleSignalItem(object):
 
     def changeScale(self, newScale):
         self.scaling = newScale
-        self.resetPixmap()
+        self.resetPixmap() 
         
     def acceptScale(self, oldScale):
-        action = ScaleItemCommand(self, oldScale, self.scaling)
-        self.scene().undoStack.push(action)
+        self.scene().undoStack.push(ScaleItemCommand(self, oldScale, self.scaling))
 
-class SubmodelPreview(SubmodelPreviewTreeManager, GraphicsRoundRectItem, RotateScaleSignalItem):
+class SubmodelPreview(SubmodelPreviewTreeManager, RotateScaleSignalItem, GraphicsRoundRectItem):
     itemClassName = "SubmodelPreview"
 
-    defaultSize = QSizeF(300.0,300.0)
+    defaultSize = QSizeF(200.0,200.0)
     defaultScale = 1.0
     defaultRotation = [20.0, 45.0, 0.0]
     fixedSize = True
@@ -1245,9 +1283,6 @@ class SubmodelPreview(SubmodelPreviewTreeManager, GraphicsRoundRectItem, RotateS
     def changeRect(self,newRect):
         self.setRect(QRectF( newRect ))
         
-    def acceptRect(self):
-        self.oldPos = self.pos()
-    
     def setAbstractPart(self, part):
         self.abstractPart = part.duplicate()
         self.resetRect()
@@ -1268,7 +1303,7 @@ class SubmodelPreview(SubmodelPreviewTreeManager, GraphicsRoundRectItem, RotateS
         # validate size
         size = self.rect().size()
         ptF  = self.rect().topLeft()
-        if size.width() < 100 or size.height() < 100:
+        if size.width() < 50 or size.height() < 50:
             self.setRect(QRectF(ptF,self.defaultSize))
 
     def moveTo(self, align = Qt.AlignLeft):
@@ -1361,7 +1396,7 @@ class SubmodelPreview(SubmodelPreviewTreeManager, GraphicsRoundRectItem, RotateS
         menu.addAction("Adjust View", self.adjustRectSignal)
         menu.exec_(event.screenPos())
     
-class PLIItem(PLIItemTreeManager, QGraphicsRectItem, RotateScaleSignalItem):
+class PLIItem(PLIItemTreeManager, RotateScaleSignalItem, QGraphicsRectItem):
     """ Represents one part inside a PLI along with its quantity label. """
     itemClassName = "PLIItem"
 
@@ -1431,6 +1466,14 @@ class PLIItem(PLIItemTreeManager, QGraphicsRectItem, RotateScaleSignalItem):
         self.numberItem.setText("%dx" % self.quantity)
         self.numberItem.data = lambda index: "Qty. Label (%dx)" % self.quantity
 
+    def selectedRelatedParts(self):
+        self.setSelected(False)
+        csi = self.parentItem().parentItem().csi
+        for part in csi.getPartList():
+            if self.abstractPart.name == part.abstractPart.name:
+                part.setSelected(True)
+        self.scene().emit(SIGNAL("sceneClick"))                
+    
     def resetRect(self):
         lblHeight = self.numberItem.rect().height()
         glRect = QRectF(0.0, 0.0, self.abstractPart.width, self.abstractPart.height +lblHeight)
@@ -1512,6 +1555,10 @@ class PLIItem(PLIItemTreeManager, QGraphicsRectItem, RotateScaleSignalItem):
         menu.addAction("Scale PLI Item", self.scaleSignal)
         menu.addSeparator()
         menu.addAction("normalize View",self.normalizeView)
+        menu.addAction("reset Quantity", lambda: self.setQuantity(1))
+        if hasattr(self.parentItem().parentItem(), "csi"):
+            menu.addSeparator()
+            menu.addAction("select Part%s" % ("s" if self.quantity > 1 else "") , self.selectedRelatedParts )
         menu.exec_(event.screenPos())
 
 class PLI(PLITreeManager, GraphicsRoundRectItem):
@@ -1674,7 +1721,7 @@ class PLI(PLITreeManager, GraphicsRoundRectItem):
             if item.lengthIndicator:
                 item.moveBy(0, item.lengthIndicator.rect().height())
 
-class CSI(CSITreeManager, QGraphicsRectItem, RotateScaleSignalItem):
+class CSI(CSITreeManager, RotateScaleSignalItem, QGraphicsRectItem):
     """ Construction Step Image.  Includes border and positional info. """
     itemClassName = "CSI"
 
@@ -1801,10 +1848,9 @@ class CSI(CSITreeManager, QGraphicsRectItem, RotateScaleSignalItem):
             self.setRect(QRectF())
             self.glDispID = LicGLHelpers.UNINIT_GL_DISPID
             return  # No parts = reset pixmap
-        
         # Temporarily enlarge CSI, in case recent changes pushed image out of existing bounds.
         oldWidth, oldHeight = self.rect().width(), self.rect().height()
-        oldRect = self.rect()
+
         self.setRect(0.0, 0.0, self.getPage().PageSize.width(), self.getPage().PageSize.height())
 
         glContext = self.getPage().instructions.glContext
@@ -1829,9 +1875,6 @@ class CSI(CSITreeManager, QGraphicsRectItem, RotateScaleSignalItem):
 
         glContext.makeCurrent()
         
-        # Restore
-        self.setRect(oldRect)
-
     def initSize(self, size, pBuffer):
         """
         Initialize this CSI's display width, height and center point. To do
@@ -1846,7 +1889,6 @@ class CSI(CSITreeManager, QGraphicsRectItem, RotateScaleSignalItem):
             True if CSI rendered successfully.
             False if the CSI has been rendered partially or wholly out of frame.
         """
-
         if self.glDispID == LicGLHelpers.UNINIT_GL_DISPID:
             print "ERROR: Trying to init a CSI size that has no display list"
             LicHelpers.writeLogEntry("Trying to initialize a CSI size that has no display list", self.__class__.__name__)
@@ -2329,7 +2371,6 @@ class Submodel(SubmodelTreeManager, AbstractPart):
                 self.deletePage(page)
     
     def addInitialPagesAndSteps(self):
-
         for submodel in self.submodels:
             submodel.addInitialPagesAndSteps()
 
@@ -2339,13 +2380,15 @@ class Submodel(SubmodelTreeManager, AbstractPart):
 
         # Add one step for every 5 parts, and one page per step
         # At this point, if model had no steps (assumed for now), we have one page per submodel
-        PARTS_PER_STEP_MAX = 5
+        PARTS_PER_STEP_MAX = 5        
         
         csi  = self.pages[0].steps[0].csi
-        while csi.partCount() > 0:
+        self.populateStepsWithParts(csi,PARTS_PER_STEP_MAX)
+
+    def populateStepsWithParts(self,sourceCSI,maxParts):      
+        while sourceCSI.partCount() > maxParts:
             
-            partList = csi.getPartList()
-            #partList.sort(key = lambda x: x.xyzSortOrder())
+            partList = sourceCSI.getPartList()
             partList.sort(cmp = LicHelpers.compareParts)
             
             part = partList[0]
@@ -2363,7 +2406,7 @@ class Submodel(SubmodelTreeManager, AbstractPart):
                     nextPart = partList[currentPartIndex]
                     
                 # Here, currentPartIndex points to the next potential splice point
-                if currentPartIndex > PARTS_PER_STEP_MAX:
+                if currentPartIndex > maxParts:
                     
                     # Have lots of parts in this layer: keep most popular part here, bump rest to next step
                     partCounts = {}
@@ -2382,7 +2425,7 @@ class Submodel(SubmodelTreeManager, AbstractPart):
                     part = partList[0]
                     nextPart = partList[1]
                     while (abs(part.by2() - nextPart.by()) <= 4.0) and \
-                          (currentPartIndex < PARTS_PER_STEP_MAX - 1) and \
+                          (currentPartIndex < maxParts - 1) and \
                           (currentPartIndex < len(partList) - 1):
                         part = partList[currentPartIndex]
                         nextPart = partList[currentPartIndex + 1]
@@ -2424,8 +2467,8 @@ class Submodel(SubmodelTreeManager, AbstractPart):
                 currentStep.removePart(part)
                 newPage.steps[-1].addPart(part)
 
-            csi = newPage.steps[-1].csi
-
+            sourceCSI = newPage.steps[-1].csi
+            
     def mergeInitialPages(self):
         
         for submodel in self.submodels:

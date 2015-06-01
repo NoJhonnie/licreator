@@ -259,7 +259,7 @@ class MoveStepToPageCommand(QUndoCommand):
     _id = getNewCommandID()
 
     def __init__(self, stepSet):
-        QUndoCommand.__init__(self, "move Step to Page")
+        QUndoCommand.__init__(self, "move Step%s to Page" % ("s" if stepSet.__len__() >1 else ""))
         self.stepSet = stepSet
 
     def doAction(self, redo):
@@ -850,11 +850,13 @@ class ScaleItemCommand(QUndoCommand):
     _id = getNewCommandID()
 
     def __init__(self, target, oldScale, newScale):
-        QUndoCommand.__init__(self, "Item Scale")
+        role = target.data(Qt.AccessibleTextRole)
+        role = role.toPyObject() if hasattr(role, "toPyObject") else role
+        QUndoCommand.__init__(self, "%s scale" % role)
         self.target, self.oldScale, self.newScale = target, oldScale, newScale
 
     def doAction(self, redo):
-        self.target.scaling = self.newScale if redo else self.oldScale
+        self.target.scaling = self.oldScale if redo else self.newScale
         self.target.resetPixmap() 
         self.target.getPage().initLayout()
 
@@ -863,11 +865,13 @@ class RotateItemCommand(QUndoCommand):
     _id = getNewCommandID()
 
     def __init__(self, target, oldRotation, newRotation):
-        QUndoCommand.__init__(self, "Item rotation")
+        role = target.data(Qt.AccessibleTextRole)
+        role = role.toPyObject() if hasattr(role, "toPyObject") else role        
+        QUndoCommand.__init__(self, "%s rotation" % role)
         self.target, self.oldRotation, self.newRotation = target, oldRotation, newRotation
-
+        
     def doAction(self, redo):
-        self.target.rotation = list(self.newRotation) if redo else list(self.oldRotation)
+        self.target.rotation = list(self.oldRotation) if redo else list(self.newRotation)
         self.target.resetPixmap() 
         self.target.getPage().initLayout()
 
@@ -881,7 +885,7 @@ class ScaleDefaultItemCommand(QUndoCommand):
         self.oldScale, self.newScale = oldScale, newScale
 
     def doAction(self, redo):
-        self.target.defaultScale = self.newScale if redo else self.oldScale
+        self.target.defaultScale = self.oldScale if redo else self.newScale
         self.resetGLItem(self.templateItem)
         self.templateItem.update()  # Need this to force full redraw
             
@@ -895,7 +899,7 @@ class RotateDefaultItemCommand(QUndoCommand):
         self.oldRotation, self.newRotation = oldRotation, newRotation
 
     def doAction(self, redo):
-        self.target.defaultRotation = list(self.newRotation) if redo else list(self.oldRotation)
+        self.target.defaultRotation = list(self.oldRotation) if redo else list(self.newRotation)
         self.resetGLItem(self.templateItem)
 
 class SetPageNumberPosCommand(QUndoCommand):
@@ -1239,7 +1243,7 @@ class CalloutToSubmodelCommand(SubmodelToCalloutCommand):
         submodel.mergeInitialPages()
         if submodel.glDispID == LicGLHelpers.UNINIT_GL_DISPID:
             submodel.createGLDisplayList()
-        submodel.resetPixmap()
+        submodel.resetPixmap(callout.getPage().instructions.glContext)
 
         self.newPart = submodel.createBlankPart()
         self.newPart.abstractPart = submodel

@@ -82,6 +82,8 @@ class LicProgressDialog(QProgressDialog):
         self.setValue(1)  # Try and force dialog to show up right away
         self.count = 0
         
+        QCoreApplication.processEvents()
+        
     def incr(self, label = None):
         self.count += 1
         if label:
@@ -155,6 +157,7 @@ class MessageDlg(QWidget):
         self._icon = QLabel()
         self._icon.setPixmap(QIcon(":/lic_logo").pixmap(32,32))
         self._message = QLabel()
+        self.centreLayout = QHBoxLayout()
         
         self.button1 = ExtendedLabel()
         button2 = ExtendedLabel()
@@ -164,6 +167,7 @@ class MessageDlg(QWidget):
         hbox= QHBoxLayout()
         hbox.addWidget(self._icon,0,Qt.AlignTop)
         hbox.addWidget(self._message,1,Qt.AlignLeft)
+        hbox.addLayout(self.centreLayout ,1)
         hbox.addSpacing(5)
         hbox.addWidget(self.button1)
         hbox.addWidget(button2)
@@ -199,8 +203,8 @@ class AdjustAreaDialog(QDialog):
         self.startPos = absolutePos
 
         buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal)
-        self.widthSpinBox = self.makeSpinBox(originalRect.width(), self._minValue, 1000.0, None)
-        self.heightSpinBox = self.makeSpinBox(originalRect.height(), self._minValue, 1000.0, None)
+        self.widthSpinBox = self.makeSpinBox(originalRect.width(), self._minValue, 1001.0, None)
+        self.heightSpinBox = self.makeSpinBox(originalRect.height(), self._minValue, 1001.0, None)
         self.xyzWidget = XYZWidget(None, -1000, 1000, originalRect.x(), originalRect.y(), 0.0)
 
         self.conn = ExtendedLabel(self)
@@ -210,22 +214,24 @@ class AdjustAreaDialog(QDialog):
         find = ExtendedLabel(self)
         find.setPixmap(QPixmap(":/find"))
 
-        vbox = QVBoxLayout()
-        vbox.addWidget(self.widthSpinBox)
-        vbox.addWidget(self.heightSpinBox)
+        grid = QGridLayout()
+        grid.addWidget(QLabel("W:"),1,1,Qt.AlignRight)
+        grid.addWidget(self.widthSpinBox,1,2)
+        grid.addWidget(QLabel("H:"),2,1,Qt.AlignRight)
+        grid.addWidget(self.heightSpinBox,2,2)
         
         hbox = QHBoxLayout()
-        hbox.addSpacing(25)
-        hbox.addLayout(vbox,1)
+        hbox.addLayout(grid,1)
         hbox.addWidget(self.conn)
+        hbox.addSpacing(15)
         
-        grid = QGridLayout()
-        grid.addLayout(hbox, 1, 1 ,Qt.AlignHCenter)
-        grid.addWidget(self.xyzWidget, 2, 1)    
-        grid.addWidget(find, 2, 2 ,Qt.AlignTop)
+        master = QGridLayout()
+        master.addLayout(hbox, 1, 1 ,Qt.AlignHCenter)
+        master.addWidget(self.xyzWidget, 2, 1)    
+        master.addWidget(find, 2, 2 ,Qt.AlignTop)
 
-        grid.addWidget(buttonBox, 3, 0, 1, 3)
-        self.setLayout(grid)    
+        master.addWidget(buttonBox, 3, 0, 1, 3)
+        self.setLayout(master)    
         self.move( parent.window().pos().x() , parent.mapToGlobal(parent.pos()).y() )
 
         self.connect(buttonBox, SIGNAL("accepted()"), self, SLOT("accept()"))
@@ -786,7 +792,7 @@ class ScaleDlg(QDialog):
         
     def accept(self):
         newSize = self.sizeSpinBox.value() / 100.0
-        self.emit(SIGNAL("changeScale"), newSize)
+        self.emit(SIGNAL("acceptScale"), newSize)
         QDialog.accept(self)
         
     def reject(self):
@@ -839,7 +845,7 @@ class RotationDialog(QDialog):
         self.xyzWidget.selectFirst()
 
     def accept(self):
-        self.emit(SIGNAL("changeRotation"), self.xyzWidget.xyz())
+        self.emit(SIGNAL("acceptRotation"), self.xyzWidget.xyz())
         QDialog.accept(self)
 
     def reject(self):

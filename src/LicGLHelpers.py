@@ -27,6 +27,7 @@ from OpenGL.GL.EXT.framebuffer_object import *
 from OpenGL.GLU import *
 from PyQt4.QtCore import QPointF
 from PyQt4.QtOpenGL import QGLFormat, QGL
+from LicHelpers import writeLogAccess
 
 
 # Optimization: turn off PyOpenGL error checking, which is a major source of slowdown

@@ -47,7 +47,7 @@ import LicBinaryReader
 import LicBinaryWriter
 
 from LicAssistantWidget import LicShortcutAssistant,LicCleanupAssistant,LicWorker,\
-    LicDownloadAssistant
+    LicDownloadAssistant, LicJumper
 from LicImporters import BuilderImporter
 from LicImporters import LDrawImporter
 from config import POVRayPath
@@ -71,7 +71,7 @@ except ImportError:
     except:
         pass # Ignore missing Resource bundle silently - better to run without icons then to crash entirely
 
-__version__ = "1.0.155"
+__version__ = "2.0.016"
 _debug = False
 
 if _debug:
@@ -113,9 +113,9 @@ class LicTreeView(QTreeView):
                     continue  # Special case: skip the template page
                 traverse(model.index(row, 0, index))
         
-        traverse(QModelIndex())
-
-    def walkToNextChild(self):
+        traverse(QModelIndex())             
+                 
+    def walkToNextTopChild(self):
         """ Jump to next|current top-level item at destination page """
         selected = self.selectionModel().currentIndex()
     # second level
@@ -131,15 +131,17 @@ class LicTreeView(QTreeView):
                         break
                 chosen = chosen.parent()
                 if not chosen.isValid():
-                    break;
+                    break
                   
             if chosen.isValid():
                 selected = chosen
+
     # if nothing is selected, get first on matching list
         if not selected.isValid():
                 p = self.selectionModel().currentIndex()
                 selected = p.sibling(0 ,p.column())
-                 
+    
+    # if is valid clear and select chosen QModelIndex             
         if selected.isValid():
             self.selectionModel().select(selected, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)
             self.selectionModel().setCurrentIndex(selected ,QItemSelectionModel.SelectCurrent)
@@ -413,6 +415,8 @@ class LicWindow(QMainWindow):
         self._orginalname  = ""
         self._worker = None
         self.assistant = None
+        self.jumper = None
+        
         self.hRuler = None
         self.vRuler = None
         
@@ -479,11 +483,27 @@ class LicWindow(QMainWindow):
         self.orginalcontent = []   # This will trigger __setOrginalcontent below      
         
     def eventFilter(self, receiver, event):
-        tree = self.treeWidget.tree
-        if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Tab:
-            tree.walkToNextChild()
-            tree.pushTreeSelectionToScene()
-            return True
+        if event.type() == QEvent.ShortcutOverride: 
+        # Shift + Tab is not the same as trying to catch a Shift modifier and a tab Key.
+        # Shift + Tab is a Backtab!!
+            if event.key() == Qt.Key_Backtab:
+                self.scene.selectNextPart()
+                return True
+        
+        if event.type() == QEvent.KeyPress:
+            if self.jumper and self.jumper.isVisible():
+                self.jumper.close()
+                
+            if event.key() == Qt.Key_F10 and self.scene.pages:
+                if self.jumper is None:
+                    self.jumper = LicJumper(self.scene)
+                self.jumper.show()
+            
+            if event.key() == Qt.Key_Tab:
+                tree = self.treeWidget.tree
+                tree.walkToNextTopChild()
+                tree.pushTreeSelectionToScene()
+                return True
             
     # pass the event on to the parent class
         return QMainWindow.eventFilter(self, receiver, event)
@@ -1003,8 +1023,8 @@ class LicWindow(QMainWindow):
             return
 
         startTime = time.time()
-        progress = LicDialogs.LicProgressDialog(self, "Importing " + os.path.basename(filename))
-        progress.setValue(2)  # Try and force dialog to show up right away
+        self.progress = LicDialogs.LicProgressDialog(self, "Importing " + os.path.basename(filename))
+        self.progress.setValue(2)  # Try and force dialog to show up right away
 
         self.orginalcontent = []
         self._orginalsaved = False
@@ -1019,21 +1039,21 @@ class LicWindow(QMainWindow):
         else:
             self._orginalname = filename
 
-        loader = self.instructions.importModel(filename)
-        progress.setMaximum(loader.next())  # First value yielded after load is # of progress steps
+        self.loader = self.instructions.importModel(filename)
+        self.progress.setMaximum(self.loader.next())  # First value yielded after load is # of progress steps
 
-        for label in loader:
-            if progress.wasCanceled():
-                loader.close()
+        for label in self.loader:
+            if self.progress.wasCanceled():
+                self.loader.close()
                 self.fileClose()
                 return
-            progress.incr(label)
+            self.progress.incr(label)
 
         self.scene.emit(SIGNAL("layoutAboutToBeChanged()"))
         self.treeModel.root = self.instructions.mainModel
 
         try:
-            template = LicBinaryReader.loadLicTemplate(self.defaultTemplateFilename, self.instructions)
+            self.template = LicBinaryReader.loadLicTemplate(self.defaultTemplateFilename, self.instructions)
 
 #            import LicTemplate  # Use this to regenerate new default template from scratch, to add new stuff to it
 #            template = LicTemplate.TemplatePage(self.instructions.mainModel, self.instructions)
@@ -1041,15 +1061,15 @@ class LicWindow(QMainWindow):
         except IOError, unused:
             # Could not load default template, so load template stored in resource bundle
             writeLogEntry("Could not load default template, so load template stored in resource bundle",self.__class__.__name__)
-            template = LicBinaryReader.loadLicTemplate(":/default_template", self.instructions)
+            self.template = LicBinaryReader.loadLicTemplate(":/default_template", self.instructions)
         
-        template.filename = ""  # Do not preserve default template filename
-        progress.incr("Adding Part List Page")
-        self.instructions.template = template
+        self.template.filename = ""  # Do not preserve default template filename
+        self.progress.incr("Adding Part List Page")
+        self.instructions.template = self.template
         self.instructions.mainModel.partListPages = PartListPage.createPartListPages(self.instructions)
-        template.applyFullTemplate(False)  # Template should apply to part list but not title pages
+        self.template.applyFullTemplate(False)  # Template should apply to part list but not title pages
 
-        progress.incr("Adding Title Page")
+        self.progress.incr("Adding Title Page")
         self.instructions.mainModel.createNewTitlePage(False)
 
         self.scene.emit(SIGNAL("layoutChanged()"))
@@ -1062,8 +1082,10 @@ class LicWindow(QMainWindow):
         self.enableMenus(True)
         self.copySettingsToScene()
 
-        progress.incr("Finishing up...")
-        progress.setValue(progress.maximum())
+        self.progress.incr("Finishing up...")
+        self.progress.setValue(self.progress.maximum())
+        self.template = None
+        self.loader = None
         
         simpleModel = False
         if self.instructions.mainModel:
