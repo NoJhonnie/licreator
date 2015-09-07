@@ -3,20 +3,15 @@
     Copyright (C) 2010 Remi Gagne
     Copyright (C) 2015 Jeremy Czajkowski
 
-    This file (LicDialogs.py) is part of Lic.
+    This file (LicDialogs.py) is part of LIC.
 
-    Lic is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    Lic is distributed in the hope that it will be useful,
+    LIC is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see http://www.gnu.org/licenses/
+    You should have received a copy of the Creative Commons License
+    along with this program.  If not, see http://creativecommons.org/licenses/by-sa/3.0/
 """
 
 
@@ -190,6 +185,10 @@ class MessageDlg(QWidget):
     
     def setText(self,text):
         self._message.setText(text)
+        
+    def setAcceptAction(self, callable):
+        self.button1.setPixmap( QCommonStyle().standardIcon (QStyle.SP_DialogApplyButton).pixmap(16,16) )
+        self.connect(self.button1 ,SIGNAL("clicked()") ,callable)
 
 class AdjustAreaDialog(QDialog):
     _minValue = 10

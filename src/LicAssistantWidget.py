@@ -1,40 +1,39 @@
 """
-    Lic - Instruction Book Creation software
+    LIC - Instruction Book Creation software
     Copyright (C) 2015 Jeremy Czajkowski
 
-    This file (LicAssistantWidget.py) is part of Lic.
+    This file (LicAssistantWidget.py) is part of LIC.
 
-    Lic is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    Lic is distributed in the hope that it will be useful,
+    LIC is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see http://www.gnu.org/licenses/
+    You should have received a copy of the Creative Commons License
+    along with this program.  If not, see http://creativecommons.org/licenses/by-sa/3.0/
 """
 
 import thread
 
 from PyQt4.Qt import *  
 
-from LicModel import Step, PLIItem, Part, PLI
-from LicQtWrapper import ExtendedLabel
-from LicUndoActions import MovePartsToStepCommand , AddRemovePageCommand
-import LicGLHelpers
 import os
 import Image
 import urllib2
 import config
 import tempfile
-from LicCustomPages import Page
-from LicHelpers import SUBWINDOW_BACKGROUND
-from LicDialogs import MessageDlg, makeSpinBox
+import re
+
 import LicHelpers
+import LicGLHelpers
+
+from LicLayout import AutoLayout
+from LicModel import Step, PLIItem, Part, PLI
+from LicQtWrapper import ExtendedLabel
+from LicUndoActions import MovePartsToStepCommand , AddRemovePageCommand,\
+    LayoutItemCommand
+from LicCustomPages import Page
+from LicDialogs import MessageDlg, makeSpinBox
 
 
 shortcuts = {
@@ -49,9 +48,11 @@ shortcuts = {
     ,9: ["Go to first or title page","Home"]
     ,10:["Go to last page","End"]
     ,11:["Jump to selected step or page","F10"]
-    ,12:["Show or hide rules","F6"]
-    ,13:["Show or hide this pop-up window","F1"]
+    ,12:["Remove blank pages","F9"]
+    ,13:["Show or hide rules","F6"]
+    ,14:["Show or hide this pop-up window","F1"]
 }
+
 
 class LicWorker(QObject):
     """
@@ -101,6 +102,7 @@ class LicWorker(QObject):
         else:
             self._doLongWork(self._counter)
 
+
 class LicJumper(MessageDlg):
     def __init__(self ,scene):
         MessageDlg.__init__(self , scene.views()[0])
@@ -109,7 +111,7 @@ class LicJumper(MessageDlg):
         self.maxCount = [1,1]
         
         self.setText("Jump to:")
-        self.setStatusTip("Put the numer and press ENTER to finish task")
+        self.setStatusTip("Put the numer and press ENTER inside field to finish task")
         
         self.valueSpinBox = makeSpinBox(self ,1 ,1 ,1.0)
         self.pageCheckBox = QRadioButton("page" ,self)
@@ -141,19 +143,26 @@ class LicJumper(MessageDlg):
         
         return QWidget.showEvent(self, event)    
     
+    def enterEvent(self, event):
+        if self.scene:
+            self.scene.clearSelection()
+        
+        return QWidget.enterEvent(self, event)
+    
     def acceptValue(self):
         if self.valueSpinBox.hasFocus():
             self.close()
             if self.scene.pages:
                 number = self.valueSpinBox.value()
                 if self.pageCheckBox.isChecked():
-                    self.scene.selectPage(number)
+                    self.scene.selectPageFullUpdate(number)
                 if self.stepCheckBox.isChecked():
                     for page in self.scene.pages:
                         for step in page.steps:
                             if step.number == number:
                                 self.scene.selectPage(step.parentItem().number)
                                 step.setSelected(True)
+                                self.scene.emit(SIGNAL("sceneClick"))
                                 return
                                     
     def stateChanged(self, state):
@@ -163,10 +172,17 @@ class LicJumper(MessageDlg):
         self.valueSpinBox.setMaximum(1)
         if self.scene.pages:  
             pageCount = self.scene.pageCount()
-            stepCount = self.scene.pages[pageCount].steps[-1].number
+            stepCount = 1
+            
+            if pageCount > 1:
+                lastPage = self.scene.pages[pageCount] 
+                for page in self.scene.pages:
+                    if not page.isEmpty():
+                        stepCount += page.steps.__len__()
             
             self.maxCount=[stepCount,pageCount]
             self.valueSpinBox.setMaximum(pageCount)
+
 
 class LicDownloadAssistant(MessageDlg):
     repositoryHost = "https://raw.githubusercontent.com"
@@ -266,7 +282,7 @@ class LicShortcutAssistant(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         ht = p.fontMetrics().height()
-        p.fillRect(self.rect(), QColor(SUBWINDOW_BACKGROUND))
+        p.fillRect(self.rect(), QColor(LicHelpers.SUBWINDOW_BACKGROUND))
         p.setPen(QPen(QBrush(QColor(Qt.black) ,Qt.Dense6Pattern ), 4.0))
         p.drawRect(self.rect())
         p.setPen(Qt.black)
@@ -286,6 +302,70 @@ class LicShortcutAssistant(QWidget):
         
         p.drawText(QPointF(x -textWidth/2 ,y) ,self._authorinfo)
         p.drawImage(QPointF(x -64 ,y+ht) , self.license)
+
+
+class LicLayoutAssistant(MessageDlg):
+    
+    _vertical = False
+    
+    def __init__(self ,scene):
+        MessageDlg.__init__(self ,scene.views()[0] ,QSize(500,40))  
+        
+        self.scene = scene
+        
+        self.setText("Change to")
+        self.setStatusTip("Enter the page numbers separated by commas")
+        
+        self.nTextField= QLineEdit()
+        self.hCheckBox = QRadioButton("horizontal" ,self)
+        self.vCheckBox = QRadioButton("vertical" ,self)
+        
+        self.hCheckBox.setChecked(True)
+        
+        self.connect(self.vCheckBox, SIGNAL("toggled(bool)") ,self.stateChanged)
+        self.setAcceptAction(self.acceptValue)
+        
+        hbox = self.centreLayout
+        hbox.addSpacing(5)
+        hbox.addWidget(self.hCheckBox ,1 ,Qt.AlignLeft)        
+        hbox.addWidget(self.vCheckBox ,1 ,Qt.AlignLeft)  
+        hbox.addWidget(QLabel("layout for"))
+        hbox.addWidget(self.nTextField ,1)
+        hbox.addWidget(QLabel("pages"))   
+        hbox.addSpacing(15)  
+
+    def enterEvent(self, event):
+        if self.scene:
+            self.scene.clearSelection()
+        
+        return QWidget.enterEvent(self, event)
+            
+    def stateChanged(self, state):
+        self._vertical = state
+        
+    def acceptValue(self):
+        vals = self.nTextField.text()
+        stack= self.scene.undoStack
+        state= int(self._vertical)
+        nums = []
+        if vals and self.scene.pages:
+            regexp = re.compile(r'^\d{1,}(-\d{1,}|)$')
+            nums   = LicHelpers.rangeify(regexp,vals) 
+                  
+            if nums:
+                stack.beginMacro("change layout%s" % ("s" if nums.__len__() >1 else "") )
+                for page in self.scene.pages:
+                    try:
+                        c = nums.index(page.number)
+                    except:
+                        c = -1
+                    else:
+                        if c > -1:  
+                            lstate = state if page.steps and page.steps.__len__() > 1 else AutoLayout 
+                            stack.push(LayoutItemCommand(page, page.getCurrentLayout(), lstate))
+                stack.endMacro()
+                self.close()
+
 
 class LicPlacementAssistant(QWidget):    
     
@@ -404,7 +484,7 @@ class LicPlacementAssistant(QWidget):
     def paintEvent(self, event):
     # prepare canvas
         p = QPainter(self)
-        p.fillRect(self.rect(), QColor(SUBWINDOW_BACKGROUND))
+        p.fillRect(self.rect(), QColor(LicHelpers.SUBWINDOW_BACKGROUND))
     # draw border
         p_old = p.pen()
         p_new = QPen(QBrush(QColor(Qt.black) ,Qt.Dense6Pattern ), 2.0)
@@ -504,6 +584,7 @@ class LicPlacementAssistant(QWidget):
 
         if not self.isVisible():
             self.show()
+
                     
 class LicCleanupAssistant(QDialog):        
         

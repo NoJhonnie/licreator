@@ -1,3 +1,19 @@
+2.0.039---------------------------------------------------------------------------
+:: Do some issue ScaleDefaultItemCommand not use full draw 
+:: Handle NoneType for deletePersistentItem
+:: Fix RuntimeError of wrapped C/C++ object for SubmodelToCalloutCommand /LicUndoActions/
+:: Fix KeyError into __readTemplate and __readPLIItem /LicBinaryReader/
+:: clearSelection do not infect saveSelection and restoreSelection /LicGraphicsScene/
+:: Layout orientation actually remember in undo stack
+:: Can change layout orientation for selected pages in one time
+:: Can remove empty|blank pages automatically 
+:: Can expand only children of selected node in tree view 
+:: Added new shortcuts
+:: Improve LicJumper
+:: Change tool bar icon size to 18 pixels
+:: Re-grouped tool bar actions
+:: Lock icon use SmoothTransformation and ItemIgnoresTransformations flags now
+:: NOTE: build.py on windows use now PYTHONHOME environment variable
 2.0.016---------------------------------------------------------------------------
 :: Fix TypeError and AttributeError for CalloutToSubmodelCommand
 :: Fix bugs and Improved scaling and rotation

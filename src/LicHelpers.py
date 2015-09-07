@@ -1,22 +1,17 @@
 """
-    Lic - Instruction Book Creation software
+    LIC - Instruction Book Creation software
     Copyright (C) 2010 Remi Gagne
     Copyright (C) 2015 Jeremy Czajkowski
 
-    This file (LicHelpers.py) is part of Lic.
+    This file (LicHelpers.py) is part of LIC.
 
-    Lic is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    Lic is distributed in the hope that it will be useful,
+    LIC is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see http://www.gnu.org/licenses/
+    You should have received a copy of the Creative Commons License
+    along with this program.  If not, see http://creativecommons.org/licenses/by-sa/3.0/
 """
 
 import collections
@@ -24,12 +19,12 @@ import logging
 
 from PyQt4.QtCore import Qt, QPointF, QString, QSettings
 from PyQt4.QtGui import QPainterPath
+from config import grayscalePath
 
 import LDrawColors
 import re
-from config import grayscalePath
+import unicodedata
 import os.path
-from PyQt4.Qt import QMouseEvent, QApplication
 
 SUBWINDOW_BACKGROUND = "#FFFACD"
 
@@ -325,5 +320,35 @@ def polygonToCurvedPath(polygon, radius):
     path.closeSubpath()
     return path
     
+def slugify(value):
+    """
+    Normalizes string, converts to lowercase, removes non-alpha characters,
+    and converts spaces to hyphens.
 
+    Based on code in: Django
+    """
+    value = unicodedata.normalize('NFKD', unicode(value))
+    value = value.encode('ascii', 'ignore')
+    value = re.sub('[^\w\s-]', '', value).strip().lower()
+    value = re.sub('[-\s]+', '-', value)
+    return value
 
+def rangeify(regexp,value):
+    """
+    Split string, converts to integer, parsing only matched a pattern,
+    and remove duplicates.
+    
+    """
+    vals =[]
+    for r in value.split(","):
+        if regexp.match(r) is not None:
+            if str(r).find("-") > 0:
+                rc = str(r).split("-")
+                for i in range(int(rc[0]), int(rc[1])+1):
+                    if i > 0:
+                        vals.append(i)
+            else:
+                if int(r) > 0:
+                    vals.append(int(r)) 
+    vals = list(set(vals))   
+    return vals

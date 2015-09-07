@@ -1,22 +1,17 @@
 """
-    Lic - Instruction Book Creation software
+    LIC - Instruction Book Creation software
     Copyright (C) 2010 Remi Gagne
     Copyright (C) 2015 Jeremy Czajkowski
 
     This file (LicUndoActions.py) is part of Lic.
 
-    Lic is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    Lic is distributed in the hope that it will be useful,
+    LIC is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see http://www.gnu.org/licenses/
+    You should have received a copy of the Creative Commons License
+    along with this program.  If not, see http://creativecommons.org/licenses/by-sa/3.0/
 """
 
 from PyQt4.QtCore import SIGNAL, QSizeF , QPointF ,Qt
@@ -104,10 +99,12 @@ class ResizeCommand(QUndoCommand):
 class LayoutItemCommand(QUndoCommand):  #TODO: Should be able to undo Step Layouts (for Create Callout, etc)
 
     _id = getNewCommandID()
+    _names = {0:"horizontal ",1:"vertical ",2:"auto-"}
 
-    def __init__(self, target, originalLayout):
-        QUndoCommand.__init__(self, "auto-layout")
+    def __init__(self, target, originalLayout, layoutType = 2):
+        QUndoCommand.__init__(self, "{0}layout".format(self._names[layoutType] if self._names.has_key(layoutType) else self._names[2]))
         self.target, self.originalLayout = target, originalLayout
+        self.target.layout.orientation = layoutType 
 
     def doAction(self, redo):
         if redo:
@@ -886,8 +883,6 @@ class ScaleDefaultItemCommand(QUndoCommand):
 
     def doAction(self, redo):
         self.target.defaultScale = self.oldScale if redo else self.newScale
-        self.resetGLItem(self.templateItem)
-        self.templateItem.update()  # Need this to force full redraw
             
 class RotateDefaultItemCommand(QUndoCommand):
 
@@ -1152,11 +1147,14 @@ class SubmodelToCalloutCommand(QUndoCommand):
 
         # Find each instance of this submodel on the target page
         self.submodelInstanceList = []
+        self.parentInstanceList = {}
         self.addedParts = []
         for part in self.targetStep.csi.getPartList():
             if part.abstractPart == self.submodel:
-                self.targetStep.removePart(part)
+                fname = LicHelpers.slugify(self.submodel.filename)
+                self.parentInstanceList[fname] = part.parentItem()
                 self.submodelInstanceList.append(part)
+                self.targetStep.removePart(part)
 
         calloutDone = False
         for submodelPart in self.submodelInstanceList:
@@ -1202,6 +1200,8 @@ class SubmodelToCalloutCommand(QUndoCommand):
             self.targetStep.removePart(part)
 
         for submodel in self.submodelInstanceList:
+            fname = LicHelpers.slugify(self.submodel.filename)  
+            self.parentInstanceList[fname]
             self.targetStep.addPart(submodel)
 
         self.parentModel.addSubmodel(self.submodel)

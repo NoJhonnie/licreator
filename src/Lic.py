@@ -1,22 +1,17 @@
 """
-    Lic - Instruction Book Creation software
+    LIC - Instruction Book Creation software
     Copyright (C) 2010 Remi Gagne
     Copyright (C) 2015 Jeremy Czajkowski
 
-    This file (Lic.py) is part of Lic.
+    This file (Lic.py) is part of LIC.
 
-    Lic is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    Lic is distributed in the hope that it will be useful,
+    LIC is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see http://www.gnu.org/licenses/
+    You should have received a copy of the Creative Commons License
+    along with this program.  If not, see http://creativecommons.org/licenses/by-sa/3.0/
 """
 
 #from __future__ import division
@@ -33,6 +28,7 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from PyQt4.QtOpenGL import *
 
+from LicAssistantWidget import *
 from LicCustomPages import *
 from LicInstructions import *
 from LicModel import *
@@ -46,8 +42,6 @@ import LicLayout
 import LicBinaryReader
 import LicBinaryWriter
 
-from LicAssistantWidget import LicShortcutAssistant,LicCleanupAssistant,LicWorker,\
-    LicDownloadAssistant, LicJumper
 from LicImporters import BuilderImporter
 from LicImporters import LDrawImporter
 from config import POVRayPath
@@ -71,7 +65,7 @@ except ImportError:
     except:
         pass # Ignore missing Resource bundle silently - better to run without icons then to crash entirely
 
-__version__ = "2.0.016"
+__version__ = "2.0.039"
 _debug = False
 
 if _debug:
@@ -166,6 +160,15 @@ class LicTreeView(QTreeView):
     def expandOneLevel(self):
         self.expandToDepth(self.expandedDepth)
         self.expandedDepth += 1
+        
+    def expandChildren(self):
+        selection = self.selectionModel().currentIndex()
+        if selection and selection.isValid():
+            self.expand(selection)
+            
+            childCount = selection.model().rowCount(selection)
+            for i in range(0, childCount):
+                self.expand( selection.child(i, 0) )
 
     def updateTreeSelection(self):
         """ This is called whenever the graphics Scene is clicked, in order to copy selection from Scene to this Tree. """
@@ -315,10 +318,16 @@ class LicTreeWidget(QWidget):
         self.setMaximumWidth(400)
         
         self.treeToolBar = QToolBar("Tree Toolbar", self)
-        self.treeToolBar.setIconSize(QSize(15, 15))
+        self.treeToolBar.setIconSize(QSize(18, 18))
         self.treeToolBar.setStyleSheet("QToolBar { border: 0px; }")
+        self.treeToolBar.addAction(QIcon(":/expand_current"), "Expand current" , self.tree.expandChildren)
         self.treeToolBar.addAction(QIcon(":/expand"), "Expand", self.tree.expandOneLevel)
         self.treeToolBar.addAction(QIcon(":/collapse"), "Collapse", self.tree.collapseAll)
+
+        # An empty widget with automatic expanding, it works like the spacers you can use in Qt Designer
+        self.spacer = QWidget(self.treeToolBar)
+        self.spacer.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Preferred)
+        self.treeToolBar.addWidget(self.spacer)
 
         viewToolButton = QToolButton(self.treeToolBar)
         viewToolButton.setIcon(QIcon(":/down_arrow"))
@@ -414,8 +423,10 @@ class LicWindow(QMainWindow):
         self._orginalsaved = False
         self._orginalname  = ""
         self._worker = None
+        
         self.assistant = None
-        self.jumper = None
+        self.assistHandle = None
+        self.layoutAssistant = None
         
         self.hRuler = None
         self.vRuler = None
@@ -483,6 +494,10 @@ class LicWindow(QMainWindow):
         self.orginalcontent = []   # This will trigger __setOrginalcontent below      
         
     def eventFilter(self, receiver, event):
+        if event.type() == QEvent.Resize:
+            if isinstance(receiver, LicTreeView):
+                receiver.parent().spacer.setMinimumWidth( abs(event.size().width() -110) )
+            
         if event.type() == QEvent.ShortcutOverride: 
         # Shift + Tab is not the same as trying to catch a Shift modifier and a tab Key.
         # Shift + Tab is a Backtab!!
@@ -491,21 +506,27 @@ class LicWindow(QMainWindow):
                 return True
         
         if event.type() == QEvent.KeyPress:
-            if self.jumper and self.jumper.isVisible():
-                self.jumper.close()
-                
-            if event.key() == Qt.Key_F10 and self.scene.pages:
-                if self.jumper is None:
-                    self.jumper = LicJumper(self.scene)
-                self.jumper.show()
-            
+        # hide previous assistant if visible
+            if self.assistHandle and self.assistHandle.isVisible():
+                self.assistHandle.close()
+        # TAB key        
             if event.key() == Qt.Key_Tab:
                 tree = self.treeWidget.tree
                 tree.walkToNextTopChild()
                 tree.pushTreeSelectionToScene()
                 return True
+        # Function keys    
+            if self.scene.pages:
+                if event.key() == Qt.Key_F10: 
+                    self.assistHandle = LicJumper(self.scene)
+                    self.assistHandle.show()
+                    return True
+                    
+                if event.key() == Qt.Key_F9:
+                    self.scene.removeBlankPages()
+                    return True
             
-    # pass the event on to the parent class
+        # pass the event on to the parent class
         return QMainWindow.eventFilter(self, receiver, event)
         
     def showAssistant(self):
@@ -517,7 +538,15 @@ class LicWindow(QMainWindow):
             self.assistant.hide()
         else:
             self.assistant.show()     
-            
+
+    def changeLayoutSignal(self):
+        self.assistHandle = LicLayoutAssistant(self.scene)
+        self.assistHandle.show()
+    
+    def runCleanup(self):
+        if self.instructions.mainModel:
+            LicCleanupAssistant(self.instructions.mainModel.getPageList() ,self.graphicsView).show()
+
     def showHideRules(self):
         if not isinstance(self.hRuler, Ruler):
             self.hRuler = Ruler(Qt.Horizontal,self.graphicsView)
@@ -532,12 +561,8 @@ class LicWindow(QMainWindow):
         if self.vRuler.isVisible():
             self.vRuler.hide()
         else:    
-            self.vRuler.show()             
-    
-    def runCleanup(self):
-        if self.instructions.mainModel:
-            LicCleanupAssistant(self.instructions.mainModel.getPageList() ,self.graphicsView).show()
-
+            self.vRuler.show()     
+            
     def getSettingsFile(self):
         iniFile = os.path.join(os.path.dirname(sys.argv[0]), 'Lic.ini')
         return QSettings(QString(iniFile), QSettings.IniFormat)
@@ -826,13 +851,14 @@ class LicWindow(QMainWindow):
 
         # Model Manu
         self.modelMenu = menu.addMenu("&Model")
+        applyLayout = self.makeAction("Apply &Layout to Pages", self.changeLayoutSignal, None, "Apply chosen layout to selected pages")
         toggleAssistant = self.makeAction("Toggle &Assistant", lambda: self.showAssistant(), QKeySequence.HelpContents ,"Show or hide the list of keyboard shortcuts and license information")
         runCleanup = self.makeAction("Run &Clean-up", self.runCleanup, Qt.Key_F2, "Run clean-up utility")
         restoreOrginal = self.makeAction("Restore &Orginal", self.restoreModel, None ,"Restore model from this Instruction book")
         cacheFolder = self.makeAction("&Explore Cache", lambda: startfile( config.modelCachePath() ), Qt.Key_F4, "Opens cache directory for this Instruction")
         checkUpdates= self.makeAction("Check for Library &Updates...", self.checkUpdates, None, "Checking repository for latest updated files")
         
-        modelAction = (toggleAssistant, runCleanup, None, restoreOrginal, cacheFolder, None, checkUpdates)
+        modelAction = (applyLayout, None, toggleAssistant, runCleanup, None, restoreOrginal, cacheFolder, None, checkUpdates)
         self.addActions(self.modelMenu, modelAction)
 
     def zoom(self, factor = 0.0):

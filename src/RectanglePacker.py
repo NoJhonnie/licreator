@@ -1,4 +1,5 @@
-"""This library is free software; you can redistribute it and/or
+"""
+This library is free software; you can redistribute it and/or
 modify it under the terms of the IBM Common Public License as
 published by the IBM Corporation; either version 1.0 of the
 License, or (at your option) any later version.

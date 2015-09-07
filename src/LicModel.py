@@ -1,22 +1,17 @@
 """
-    Lic - Instruction Book Creation software
+    LIC - Instruction Book Creation software
     Copyright (C) 2010 Remi Gagne
     Copyright (C) 2015 Jeremy Czajkowski
 
-    This file (Model.py) is part of Lic.
+    This file (Model.py) is part of LIC.
 
-    Lic is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    Lic is distributed in the hope that it will be useful,
+    LIC is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see http://www.gnu.org/licenses/
+    You should have received a copy of the Creative Commons License
+    along with this program.  If not, see http://creativecommons.org/licenses/by-sa/3.0/
 """
 
 import collections
@@ -36,15 +31,16 @@ import LicGLHelpers
 import LicHelpers
 import LicImporters
 import LicL3PWrapper
-from LicLayout import *
+import LicUndoActions
 import LicPartLengths
 import LicPovrayWrapper
+
+from LicLayout import *
 from LicQtWrapper import *
 from LicTreeModel import *
 from LicUndoActions import *
-import LicUndoActions
 from LicImporters import LDrawImporter
-from LicHelpers import LicColor
+from LicDialogs import MessageDlg
 
 
 #import OpenGL
@@ -795,6 +791,10 @@ class Step(StepTreeManager, QGraphicsRectItem):
         stack = self.scene().undoStack
         scene = self.scene()
         if cnt > maxParts:
+            dialog = MessageDlg(self.scene().views()[0])
+            dialog.setText("Operation in progress...")
+            dialog.show()
+            
             m = 1
             partList = []
             page = self.parentItem()
@@ -821,6 +821,7 @@ class Step(StepTreeManager, QGraphicsRectItem):
                     m = 1
                     partList = []
                     
+            dialog.close()
             scene.restoreSelection()
             scene.emit(SIGNAL("sceneClick"))
 
@@ -1651,7 +1652,7 @@ class PLI(PLITreeManager, GraphicsRoundRectItem):
         # ,then remove tallest part, to be added first
         partList = list(self.pliItems)
         # Sort by color, reversed 
-        partList.sort(key = lambda i: i.color.sortKey() if (i.color) else LicColor.red().sortKey(), reverse = True)  
+        partList.sort(key = lambda i: i.color.sortKey() if (i.color) else LicHelpers.LicColor.red().sortKey(), reverse = True)  
         # Sort by width (then height, for ties)
         partList.sort(key = lambda i: (i.rect().width(), i.rect().height()))  
         # reverse list so we choose last part if two+ parts equally tall
@@ -2653,7 +2654,11 @@ class Submodel(SubmodelTreeManager, AbstractPart):
                 s._row -= 1
 
         page.scene().removeItem(page)
-        self.pages.remove(page)
+        try:
+            self.pages.remove(page)
+        except ValueError:
+            pass
+            
         self.instructions.updatePageNumbers(page.number, -1)
 
     def resetStepSet(self, minStepNum, maxStepNum):
@@ -3276,7 +3281,7 @@ class Part(PartTreeManager, QGraphicsRectItem):
         fh.write(line)
 
     def duplicate(self):
-        color = self.color.duplicate() if self.color else LicColor.black()
+        color = self.color.duplicate() if self.color else LicHelpers.LicColor.black()
         p = Part(self.filename, color, list(self.matrix), self.inverted)
         p.abstractPart = self.abstractPart
         p.setParentItem(self.parentItem())
